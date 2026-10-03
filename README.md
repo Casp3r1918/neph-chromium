@@ -12,7 +12,7 @@ verwenden möchte, erhält die Dateien vom Herausgeber auf Anfrage als Archiv.
 every modification Neph applies, and the build instructions. Valid for at least three years after each release;
 available as an archive on request.*
 
-## Aktuelle Version: Neph 0.3.3 (2026-10-03)
+## Aktuelle Version: Neph 0.3.2 (2026-10-03)
 
 | Bestandteil | Stand | Quelle |
 |---|---|---|
@@ -20,7 +20,7 @@ available as an archive on request.*
 | CEF | `152.0.11+g026c1f4+chromium-152.0.7977.149` (Branch 7977, Commit `026c1f4`) | https://github.com/chromiumembedded/cef/commit/026c1f4 |
 | ffmpeg (`third_party/ffmpeg`) | `2b68d2babae7` | https://chromium.googlesource.com/chromium/third_party/ffmpeg/+/2b68d2babae73714846961fb0ee47e3b3d2e39a9 |
 | ANGLE (`third_party/angle`) | `6c47c4b6dae7` | https://chromium.googlesource.com/angle/angle/+/6c47c4b6dae794245a23a16b3826efc09ebdefd0 |
-| Nephs Änderungen | `patches/` | dieses Repository, Tag `neph-v0.3.3` |
+| Nephs Änderungen | `patches/` | dieses Repository, Tag `neph-v0.3.2` |
 | GN-Argumente | `build/GN_DEFINES.txt`, `build/args.gn` | dieses Repository |
 
 Alle weiteren Abhängigkeiten (DEPS) ergeben sich aus dem Chromium-Tag; `gclient sync` stellt sie exakt wieder her.
