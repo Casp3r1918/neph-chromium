@@ -1,0 +1,105 @@
+diff --git a/chrome/app/theme/chromium/BRANDING b/chrome/app/theme/chromium/BRANDING
+index f8363d5b294fe..29a7ff9acefde 100644
+--- a/chrome/app/theme/chromium/BRANDING
++++ b/chrome/app/theme/chromium/BRANDING
+@@ -1,9 +1,9 @@
+ COMPANY_FULLNAME=The Chromium Authors
+ COMPANY_SHORTNAME=The Chromium Authors
+-PRODUCT_FULLNAME=Chromium
+-PRODUCT_SHORTNAME=Chromium
+-PRODUCT_INSTALLER_FULLNAME=Chromium Installer
+-PRODUCT_INSTALLER_SHORTNAME=Chromium Installer
++PRODUCT_FULLNAME=Neph
++PRODUCT_SHORTNAME=Neph
++PRODUCT_INSTALLER_FULLNAME=Neph Installer
++PRODUCT_INSTALLER_SHORTNAME=Neph Installer
+ COPYRIGHT=Copyright @LASTCHANGE_YEAR@ The Chromium Authors. All rights reserved.
+ MAC_BUNDLE_ID=org.chromium.Chromium
+ MAC_CREATOR_CODE=Cr24
+diff --git a/chrome/browser/component_updater/registration.cc b/chrome/browser/component_updater/registration.cc
+index 9fd11c9f722cb..a94a3c005e4ac 100644
+--- a/chrome/browser/component_updater/registration.cc
++++ b/chrome/browser/component_updater/registration.cc
+@@ -4,6 +4,7 @@
+ 
+ #include "chrome/browser/component_updater/registration.h"
+ 
++#include "base/command_line.h"
+ #include "base/feature_list.h"
+ #include "base/files/file_path.h"
+ #include "base/files/file_util.h"
+@@ -144,7 +145,11 @@ void RegisterComponentsForUpdate() {
+ #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
+ 
+ #if BUILDFLAG(ENABLE_WIDEVINE_CDM_COMPONENT)
+-  RegisterWidevineCdmComponent(cus);
++  // Neph: the Widevine CDM is licensed software; without an agreement the
++  // browser neither ships nor fetches it. The component updater learns
++  // about it only when the host asks with --neph-widevine.
++  if (base::CommandLine::ForCurrentProcess()->HasSwitch("neph-widevine"))
++    RegisterWidevineCdmComponent(cus);
+ #endif  // BUILDFLAG(ENABLE_WIDEVINE_CDM_COMPONENT)
+ 
+   RegisterSubresourceFilterComponent(cus);
+diff --git a/extensions/browser/manifest_v2_handler.cc b/extensions/browser/manifest_v2_handler.cc
+index 5841d3dfbc888..32fef85bd4bfa 100644
+--- a/extensions/browser/manifest_v2_handler.cc
++++ b/extensions/browser/manifest_v2_handler.cc
+@@ -32,7 +32,7 @@ namespace extensions {
+ namespace {
+ 
+ // Whether to override the MV2 deprecation for testing purposes.
+-bool g_allow_mv2_for_testing = false;
++bool g_allow_mv2_for_testing = true;  // Neph: Manifest V2 stays supported.
+ 
+ // Returns the suffix to use for histograms related to the manifest location
+ // grouping.
+diff --git a/gpu/config/gpu_preferences.h b/gpu/config/gpu_preferences.h
+index 841774d3e54a2..101780a8ac518 100644
+--- a/gpu/config/gpu_preferences.h
++++ b/gpu/config/gpu_preferences.h
+@@ -23,7 +23,7 @@ namespace gpu {
+ 
+ // The size to set for the program cache for default and low-end device cases.
+ #if !BUILDFLAG(IS_ANDROID)
+-const size_t kDefaultMaxProgramCacheMemoryBytes = 6 * 1024 * 1024;
++const size_t kDefaultMaxProgramCacheMemoryBytes = 64 * 1024 * 1024;  // Neph: room for the sky shaders (was 6 MB)
+ #else
+ const size_t kDefaultMaxProgramCacheMemoryBytes = 2 * 1024 * 1024;
+ const size_t kLowEndMaxProgramCacheMemoryBytes = 128 * 1024;
+diff --git a/gpu/ipc/service/command_buffer_stub.cc b/gpu/ipc/service/command_buffer_stub.cc
+index 67abe9533c4c2..54fd3176362d1 100644
+--- a/gpu/ipc/service/command_buffer_stub.cc
++++ b/gpu/ipc/service/command_buffer_stub.cc
+@@ -198,10 +198,12 @@ void CommandBufferStub::PerformWork() {
+   // TODO(sunnyps): Should this use ScopedCrashKey instead?
+   crash_keys::gpu_gl_context_is_virtual.Set(use_virtualized_gl_context_ ? "1"
+                                                                         : "0");
+-  if (decoder_context_.get() && !MakeCurrent())
+-    return;
++  // Neph: the cache scope before MakeCurrent(), which processes the pending
++  // program-completion queries; ANGLE caches the linked binary right there.
+   std::optional<gles2::ProgramCache::ScopedCacheUse> cache_use;
+   CreateCacheUse(cache_use);
++  if (decoder_context_.get() && !MakeCurrent())
++    return;
+ 
+   if (decoder_context_) {
+     uint32_t current_unprocessed_num =
+@@ -757,9 +759,14 @@ CommandBufferStub::ScopedContextOperation::ScopedContextOperation(
+     CommandBufferStub& stub)
+     : stub_(stub) {
+   stub_.UpdateActiveUrl();
+-  if (stub_.decoder_context_ && stub_.MakeCurrent()) {
+-    have_context_ = true;
++  if (stub_.decoder_context_) {
++    // Neph: see PerformWork - the scope has to cover MakeCurrent().
+     stub_.CreateCacheUse(cache_use_);
++    if (stub_.MakeCurrent()) {
++      have_context_ = true;
++    } else {
++      cache_use_.reset();
++    }
+   }
+ }
+ 

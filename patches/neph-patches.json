@@ -1,0 +1,78 @@
+{
+ "src": "C:\\cefbuild\\chromium_git\\chromium\\src",
+ "when": "2026-10-03 10:48:48",
+ "product": "Neph",
+ "lenient": true,
+ "patches": {
+  "mv2": "in place",
+  "branding_file": "in place",
+  "program_cache": "in place",
+  "cache_scope": "in place",
+  "mrt_layout": "in place",
+  "widevine": "in place",
+  "chrome/app/chromium_strings.grd": {
+   "sources_changed": 2,
+   "sources_written": 0,
+   "messages": 889,
+   "ids_changed": 544,
+   "xtb_files": 81,
+   "xtb_written": 0,
+   "translations_renamed": 42201,
+   "cef_files_left": []
+  },
+  "components/components_chromium_strings.grd": {
+   "sources_changed": 1,
+   "sources_written": 0,
+   "messages": 23,
+   "ids_changed": 20,
+   "xtb_files": 81,
+   "xtb_written": 0,
+   "translations_renamed": 1620,
+   "cef_files_left": []
+  },
+  "chrome/app/generated_resources.grd": {
+   "sources_changed": 3,
+   "sources_written": 0,
+   "messages": 12738,
+   "ids_changed": 8,
+   "xtb_files": 81,
+   "xtb_written": 0,
+   "translations_renamed": 648,
+   "cef_files_left": []
+  },
+  "components/components_strings.grd": {
+   "sources_changed": 13,
+   "sources_written": 0,
+   "messages": 6152,
+   "ids_changed": 40,
+   "xtb_files": 81,
+   "xtb_written": 0,
+   "translations_renamed": 3240,
+   "cef_files_left": [
+    "components/version_ui_strings.grdp"
+   ]
+  },
+  "components/privacy_sandbox_strings.grd": {
+   "sources_changed": 1,
+   "sources_written": 0,
+   "messages": 64,
+   "ids_changed": 6,
+   "xtb_files": 81,
+   "xtb_written": 0,
+   "translations_renamed": 486,
+   "cef_files_left": []
+  },
+  "extensions/strings/extensions_strings.grd": {
+   "sources_changed": 1,
+   "sources_written": 0,
+   "messages": 136,
+   "ids_changed": 5,
+   "xtb_files": 81,
+   "xtb_written": 0,
+   "translations_renamed": 405,
+   "cef_files_left": []
+  }
+ },
+ "optional_failed": [],
+ "files_written": 0
+}

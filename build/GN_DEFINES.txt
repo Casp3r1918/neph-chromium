@@ -1,0 +1,1 @@
+is_official_build=true proprietary_codecs=true ffmpeg_branding=Chrome enable_widevine=true use_thin_lto=false chrome_pgo_phase=0
