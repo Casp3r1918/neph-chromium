@@ -1,0 +1,116 @@
+diff --git a/libcef/browser/download_manager_delegate_impl.cc b/libcef/browser/download_manager_delegate_impl.cc
+index c3db7a1b5..dc46783d5 100644
+--- a/libcef/browser/download_manager_delegate_impl.cc
++++ b/libcef/browser/download_manager_delegate_impl.cc
+@@ -14,6 +14,8 @@
+ #include "base/strings/utf_string_conversions.h"
+ #include "cef/include/cef_download_handler.h"
+ #include "cef/libcef/browser/browser_host_base.h"
++#include "cef/libcef/browser/browser_info.h"
++#include "cef/libcef/browser/browser_info_manager.h"
+ #include "cef/libcef/browser/context.h"
+ #include "cef/libcef/browser/download_item_impl.h"
+ #include "cef/libcef/browser/thread_util.h"
+@@ -51,6 +53,46 @@ void RunDownloadTargetCallback(download::DownloadTargetCallback callback,
+   std::move(callback).Run(std::move(target_info));
+ }
+ 
++// Neph: like Chrome, the file grows under "<name>.crdownload" and gets its
++// name when it is complete, so a partial file never looks like a finished
++// one. An empty path cancels the download and stays empty.
++void RunNephDownloadTargetCallback(download::DownloadTargetCallback callback,
++                                   const base::FilePath& path) {
++  download::DownloadTargetInfo target_info;
++  target_info.target_path = path;
++  if (!path.empty()) {
++    target_info.intermediate_path =
++        base::FilePath(path.value() + FILE_PATH_LITERAL(".crdownload"));
++  }
++  std::move(callback).Run(std::move(target_info));
++}
++
++// Neph: the browser that takes over the downloads of |gone|: a valid one whose
++// client handles downloads, of |context| when there is one.
++CefRefPtr<CefBrowserHostBase> NephDownloadHeir(
++    CefBrowserHostBase* gone,
++    content::BrowserContext* context) {
++  CefRefPtr<CefBrowserHostBase> fallback;
++  for (const auto& info :
++       CefBrowserInfoManager::GetInstance()->GetBrowserInfoList()) {
++    if (!info->IsValid()) {
++      continue;
++    }
++    CefRefPtr<CefBrowserHostBase> candidate = info->browser();
++    if (!candidate || candidate.get() == gone ||
++        !GetDownloadHandler(candidate)) {
++      continue;
++    }
++    if (candidate->GetBrowserContext() == context) {
++      return candidate;
++    }
++    if (!fallback) {
++      fallback = candidate;
++    }
++  }
++  return fallback;
++}
++
+ // CefBeforeDownloadCallback implementation.
+ class CefBeforeDownloadCallbackImpl : public CefBeforeDownloadCallback {
+  public:
+@@ -174,7 +216,7 @@ class CefBeforeDownloadCallbackImpl : public CefBeforeDownloadCallback {
+     }
+ 
+     if (!handled) {
+-      RunDownloadTargetCallback(std::move(callback), suggested_path);
++      RunNephDownloadTargetCallback(std::move(callback), suggested_path);
+     }
+   }
+ 
+@@ -189,7 +231,7 @@ class CefBeforeDownloadCallbackImpl : public CefBeforeDownloadCallback {
+     }
+ 
+     // The download will be cancelled if |path| is empty.
+-    RunDownloadTargetCallback(std::move(callback), path);
++    RunNephDownloadTargetCallback(std::move(callback), path);
+   }
+ 
+   base::WeakPtr<DownloadManager> manager_;
+@@ -460,14 +502,33 @@ bool CefDownloadManagerDelegateImpl::DetermineDownloadTarget(
+ 
+ void CefDownloadManagerDelegateImpl::OnBrowserDestroyed(
+     CefBrowserHostBase* browser) {
++  // Neph: don't call back into browsers that have been destroyed, but don't
++  // let their downloads go silent either: another browser whose client handles
++  // downloads takes them over, so the client keeps seeing their progress and
++  // their end. Without one they continue silently until they complete or the
++  // browser context is destroyed.
++  CefRefPtr<CefBrowserHostBase> heir;
++  bool looked = false;
+   for (auto& [item, item_browser] : item_browser_map_) {
+     if (item_browser == browser) {
+-      // Don't call back into browsers that have been destroyed. We're not
+-      // canceling the download so it will continue silently until it completes
+-      // or until the associated browser context is destroyed.
+-      item_browser = nullptr;
++      if (!looked) {
++        looked = true;
++        heir = NephDownloadHeir(
++            browser, content::DownloadItemUtils::GetBrowserContext(item));
++      }
++      item_browser = heir.get();
+     }
+   }
++  if (heir && !heir->HasObserver(this)) {
++    heir->AddObserver(this);
++  }
++}
++
++// Neph: the host checks for this export to know that downloads keep reporting
++// after their browser is gone and that partial files carry ".crdownload".
++extern "C" __declspec(dllexport) int neph_downloads_patch_level();
++extern "C" __declspec(dllexport) int neph_downloads_patch_level() {
++  return 1;
+ }
+ 
+ CefRefPtr<CefBrowserHostBase>

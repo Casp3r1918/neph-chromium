@@ -158,12 +158,17 @@ if ($Sync) {
             # ohne Reset, CEF-Patches wieder drauf. Es verlangt einen Baum ohne
             # fremde Änderungen, darum zuerst Nephs Dateien zurück; und src\cef
             # ohne eigene Änderungen (version_manager.py könnte welche hinterlassen).
+            # apply.py --revert setzt auch Nephs Datei in src\cef zurück (Patch downloads),
+            # darum erst zurücksetzen, dann prüfen.
+            $code = Invoke-Logged 'sync-revert' 'python' @((Join-Path $repo 'scripts\chromium-patches\apply.py'), $src, '--revert') $BuildRoot
+            if ($code -ne 0) { Log 'apply.py --revert gescheitert (sync-revert.log/.err).'; $fast = $false }
+        }
+        if ($fast) {
             $cefDirty = Invoke-Git (Join-Path $src 'cef') @('status', '--porcelain', '--untracked-files=no')
             if ($cefDirty -ne '') { Log ("Schneller Weg nicht möglich, src\cef hat Änderungen:`n" + $cefDirty); $fast = $false }
         }
         if ($fast) {
-            $code = Invoke-Logged 'sync-revert' 'python' @((Join-Path $repo 'scripts\chromium-patchespply.py'), $src, '--revert') $BuildRoot
-            if ($code -eq 0) { $code = Invoke-Logged 'sync' 'python' ($arguments + '--fast-update') $BuildRoot }
+            $code = Invoke-Logged 'sync' 'python' ($arguments + '--fast-update') $BuildRoot
             if ($code -ne 0) { Log 'Schneller Sync gescheitert (sync.log/sync.err); klassischer Weg folgt.'; $fast = $false }
         }
         if (-not $fast) {
@@ -239,6 +244,8 @@ if ($Install) {
         'GPU program cache 64 MB; program-cache scope before MakeCurrent (linked binaries reach the disk cache);',
         'ANGLE D3D11 default output layout with every declared output (no second compile at the first draw);',
         'Widevine CDM component registered only with --neph-widevine (the browser neither ships nor fetches the CDM otherwise).',
+        'Saved passwords encrypted by Neph''s vault (master password + TPM-sealed device secret) instead of the OS key (patch vault).',
+        'Downloads keep reporting after the tab that started them closed; partial files grow as <name>.crdownload (patch downloads).',
         '', $patchText)
     [IO.File]::WriteAllText($marker, ($header -join "`r`n"), (New-Object Text.UTF8Encoding $true))
     # cef-release.json: fetch-cef.ps1 und CMake finden die Distribution darüber.

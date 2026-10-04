@@ -1,15 +1,17 @@
 {
  "src": "C:\\cefbuild\\chromium_git\\chromium\\src",
- "when": "2026-10-03 10:48:48",
+ "when": "2026-10-04 02:21:42",
  "product": "Neph",
- "lenient": true,
+ "lenient": false,
  "patches": {
   "mv2": "in place",
   "branding_file": "in place",
   "program_cache": "in place",
   "cache_scope": "in place",
   "mrt_layout": "in place",
+  "downloads": "written",
   "widevine": "in place",
+  "vault": "in place",
   "chrome/app/chromium_strings.grd": {
    "sources_changed": 2,
    "sources_written": 0,
@@ -74,5 +76,5 @@
   }
  },
  "optional_failed": [],
- "files_written": 0
+ "files_written": 1
 }

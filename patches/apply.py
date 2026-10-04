@@ -24,8 +24,9 @@ that are not in a CEF patch file.
 
 Mandatory and optional. The widevine patch is mandatory: without it the
 browser would fetch a CDM it has no licence for, so a missing anchor always
-stops the build. Everything else (mv2, branding, the three shader patches)
-is optional: with --lenient a missing anchor is logged, listed under
+stops the build. So is the vault patch: without it saved passwords stay under
+the key any process of the user can unwrap, whatever the settings page says.
+Everything else (mv2, branding, the three shader patches, downloads) is optional: with --lenient a missing anchor is logged, listed under
 "optional_failed" in neph-patches.json and the build goes on, so a security
 update never waits for a cosmetic anchor. Without --lenient every anchor is
 fatal, which is what a hand-run wants.
@@ -62,6 +63,12 @@ Patches
             are processed and the binaries are handed over. Without it every
             program whose link completion was seen there stayed memory-only
             and compiled again on every start.
+  vault     components/password_manager/core/browser/password_store/
+            login_database{_win.cc,.cc,.h}: saved passwords are encrypted by the
+            host's vault (master password + TPM-sealed device secret) instead of
+            the OS key; the old blobs are converted by neph_vault_migrate; the
+            store never deletes "undecryptable" passwords. Details and the ABI
+            in vault_patch.py and src/native/vault_hooks.h.
   widevine       chrome/browser/component_updater/registration.cc: the
             Widevine CDM component is registered (and so downloaded) only
             when the browser process carries --neph-widevine. Without a
@@ -71,6 +78,14 @@ Patches
             pixel output layout lists every declared output location, so a
             program with several colour outputs is not compiled a second time
             (blocking the GPU process) at its first draw.
+  downloads cef/libcef/browser/download_manager_delegate_impl.cc (in the
+            nested CEF checkout): downloads whose browser was destroyed keep
+            reporting to another browser of a client with a download handler,
+            and partial files grow as "<name>.crdownload". libcef.dll exports
+            neph_downloads_patch_level(). And
+            chrome/browser/download/download_core_service.cc: closing a tab no
+            longer cancels every download (CEF's one Browser per tab looks
+            like the last window). Details in downloads_patch.py.
 The script writes neph-patches.json next to the tree with what it did.
 """
 import glob
@@ -82,6 +97,9 @@ import subprocess
 import sys
 import tempfile
 import time
+
+import downloads_patch
+import vault_patch
 
 PRODUCT = 'Neph'
 # The product name as a word, except where it names the project or a
@@ -318,6 +336,31 @@ def patch_widevine(src, written, protected):
     return 'written' if put(src, WIDEVINE_FILE, text, written) else 'in place'
 
 
+def patch_vault(src, written, protected):
+    for path in vault_patch.FILES:
+        if path in protected:
+            raise Anchor(path + ' is CEF-patched now; move the vault patch')
+    try:
+        built = vault_patch.build({path: pristine(src, path) for path in vault_patch.FILES})
+    except vault_patch.AnchorMissing as e:
+        raise Anchor(str(e))
+    changed = [path for path, text in built.items() if put(src, path, text, written)]
+    return 'written' if changed else 'in place'
+
+
+def patch_downloads(src, written, protected):
+    for path in (downloads_patch.FILE, downloads_patch.CHROME_FILE):
+        if path in protected:
+            raise Anchor(path + ' is CEF-patched now; move the downloads patch')
+    try:
+        text = downloads_patch.build(pristine_nested(src, downloads_patch.REPO, downloads_patch.PATH))
+        chrome = downloads_patch.build_chrome(pristine(src, downloads_patch.CHROME_FILE))
+    except downloads_patch.AnchorMissing as e:
+        raise Anchor(str(e))
+    changed = [put(src, downloads_patch.FILE, text, written), put(src, downloads_patch.CHROME_FILE, chrome, written)]
+    return 'written' if any(changed) else 'in place'
+
+
 def patch_mv2(src, written):
     text = pristine(src, MV2_FILE)
     if MV2_OLD not in text:
@@ -443,7 +486,7 @@ def touched_paths(src, protected):
     the committed string tables: the grd files, their parts, their xtb
     translations, plus the fixed files. CEF-patched files are excluded."""
     paths = []
-    for p in (MV2_FILE, BRANDING, CACHE_FILE, SCOPE_FILE, WIDEVINE_FILE):
+    for p in (MV2_FILE, BRANDING, CACHE_FILE, SCOPE_FILE, WIDEVINE_FILE, downloads_patch.CHROME_FILE) + vault_patch.FILES:
         if p not in protected:
             paths.append(p)
     for grd in GRDS:
@@ -486,11 +529,16 @@ def revert(src):
     if r.returncode != 0:
         raise SystemExit('git checkout in %s failed: %s' %
                          (MRT_REPO, r.stderr.decode('utf-8', 'replace').strip()))
+    r = subprocess.run(['git', '-C', os.path.join(src, downloads_patch.REPO), 'checkout', '--',
+                        downloads_patch.PATH], capture_output=True)
+    if r.returncode != 0:
+        raise SystemExit('git checkout in %s failed: %s' %
+                         (downloads_patch.REPO, r.stderr.decode('utf-8', 'replace').strip()))
     report = os.path.join(src, 'neph-patches.json')
     if os.path.exists(report):
         os.remove(report)
-    log('reverted: %d paths restored to their committed content (plus %s)' %
-        (len(paths), MRT_FILE))
+    log('reverted: %d paths restored to their committed content (plus %s and %s)' %
+        (len(paths), MRT_FILE, downloads_patch.FILE))
     return 0
 
 
@@ -529,8 +577,10 @@ def main(argv):
         optional('program_cache', lambda: patch_program_cache(src, written, protected))
         optional('cache_scope', lambda: patch_cache_scope(src, written, protected))
         optional('mrt_layout', lambda: patch_mrt_layout(src, written, protected))
+        optional('downloads', lambda: patch_downloads(src, written, protected))
         # Mandatory, whatever the mode: see the module docstring.
         report['patches']['widevine'] = patch_widevine(src, written, protected)
+        report['patches']['vault'] = patch_vault(src, written, protected)
         for grd in GRDS:
             if not os.path.exists(os.path.join(src, grd)):
                 log('missing, skipped: ' + grd)
