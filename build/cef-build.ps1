@@ -32,6 +32,11 @@ param(
     [switch]$Lenient,
     [switch]$Slow,
     [int]$Jobs = 0,
+    # Affinitaetsmaske fuer die Compiler statt der ersten n logischen Kerne
+    # (dezimal oder 0x...): mit Hyperthreading teilen sich LP 0/1, 2/3, ...
+    # einen Kern; -Jobs 4 hiess bisher zwei physische Kerne. 0x555 = sechs
+    # eigene Kerne auf dem i5-10500, siso zaehlt die gesetzten Bits als Jobs.
+    [string]$AffinityMask = '',
     [string]$ReleaseJson = '',
     [string]$BuildRoot = 'C:\cefbuild',
     [string]$LogDir = '',
@@ -88,7 +93,8 @@ function Invoke-Logged([string]$stage, [string]$file, [string[]]$arguments, [str
     # -Jobs: die ersten n logischen Kerne als Affinität; Kinder (siso, clang)
     # erben sie, und siso zählt seine Kerne über die Affinitätsmaske. Die
     # Umgebungsvariable allein reichte nicht (siso ignorierte -j, 03.10.2026).
-    if ($Jobs -gt 0 -and $Jobs -lt 64) { try { $process.ProcessorAffinity = [IntPtr](([int64]1 -shl $Jobs) - 1) } catch { Log ("Affinität nicht gesetzt: " + $_.Exception.Message) } }
+    if ($AffinityMask -ne '') { try { $process.ProcessorAffinity = [IntPtr][int64]$AffinityMask } catch { Log ("Affinität nicht gesetzt: " + $_.Exception.Message) } }
+    elseif ($Jobs -gt 0 -and $Jobs -lt 64) { try { $process.ProcessorAffinity = [IntPtr](([int64]1 -shl $Jobs) - 1) } catch { Log ("Affinität nicht gesetzt: " + $_.Exception.Message) } }
     $process.WaitForExit()
     $minutes = [math]::Round(((Get-Date) - $started).TotalMinutes, 1)
     $script:times[$stage] = $minutes

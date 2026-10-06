@@ -116,6 +116,17 @@ MV2_FILE = 'extensions/browser/manifest_v2_handler.cc'
 MV2_OLD = 'bool g_allow_mv2_for_testing = false;'
 MV2_NEW = ('bool g_allow_mv2_for_testing = true;'
            '  // Neph: Manifest V2 stays supported.')
+# Page zoom in finer steps (06.10.2026): Chromium jumps 100 -> 110 -> 125 ->
+# 150; the user asked for a smoother zoom. Both the keyboard and Ctrl+wheel
+# take their steps from this list, so the change has to live in the core.
+ZOOM_FILE = 'third_party/blink/common/page/page_zoom.cc'
+ZOOM_OLD = ('static constexpr double kPresetBrowserZoomFactorsArray[] = {\n'
+            '    0.25, 1 / 3.0, 0.5,  2 / 3.0, 0.75, 0.8, 0.9, 1.0, 1.1,\n'
+            '    1.25, 1.5,     1.75, 2.0,     2.5,  3.0, 4.0, 5.0};')
+ZOOM_NEW = ('static constexpr double kPresetBrowserZoomFactorsArray[] = {\n'
+            '    0.25, 1 / 3.0, 0.5,  2 / 3.0, 0.75, 0.8, 0.9,  1.0, 1.05, 1.1,\n'
+            '    1.15, 1.2,     1.25, 1 / .75, 1.4,  1.5, 1.75, 2.0, 2.5,  3.0,\n'
+            '    4.0,  5.0};  // Neph: finer steps between 100 and 150 percent')
 BRANDING = 'chrome/app/theme/chromium/BRANDING'
 # The GPU process keeps compiled programs in a cache of 6 MB; Neph's six sky
 # programs are about that size together, so the largest were evicted and
@@ -368,6 +379,17 @@ def patch_mv2(src, written):
     return 'written' if put(src, MV2_FILE, text.replace(MV2_OLD, MV2_NEW, 1), written) else 'in place'
 
 
+def patch_zoom_steps(src, written, protected):
+    if ZOOM_FILE in protected:
+        raise Anchor(ZOOM_FILE + ' is CEF-patched now; move the zoom steps change')
+    text = read_current(src, ZOOM_FILE)
+    if ZOOM_NEW in text:
+        return 'in place'
+    if ZOOM_OLD not in text:
+        raise Anchor(ZOOM_FILE + ': ' + ZOOM_OLD.splitlines()[0])
+    return 'written' if put(src, ZOOM_FILE, text.replace(ZOOM_OLD, ZOOM_NEW, 1), written) else 'in place'
+
+
 def patch_program_cache(src, written, protected):
     if CACHE_FILE in protected:
         raise Anchor(CACHE_FILE + ' is CEF-patched now; move the cache change')
@@ -486,7 +508,7 @@ def touched_paths(src, protected):
     the committed string tables: the grd files, their parts, their xtb
     translations, plus the fixed files. CEF-patched files are excluded."""
     paths = []
-    for p in (MV2_FILE, BRANDING, CACHE_FILE, SCOPE_FILE, WIDEVINE_FILE, downloads_patch.CHROME_FILE) + vault_patch.FILES:
+    for p in (MV2_FILE, BRANDING, CACHE_FILE, SCOPE_FILE, ZOOM_FILE, WIDEVINE_FILE, downloads_patch.CHROME_FILE) + vault_patch.FILES:
         if p not in protected:
             paths.append(p)
     for grd in GRDS:
@@ -577,6 +599,7 @@ def main(argv):
         optional('program_cache', lambda: patch_program_cache(src, written, protected))
         optional('cache_scope', lambda: patch_cache_scope(src, written, protected))
         optional('mrt_layout', lambda: patch_mrt_layout(src, written, protected))
+        optional('zoom_steps', lambda: patch_zoom_steps(src, written, protected))
         optional('downloads', lambda: patch_downloads(src, written, protected))
         # Mandatory, whatever the mode: see the module docstring.
         report['patches']['widevine'] = patch_widevine(src, written, protected)
