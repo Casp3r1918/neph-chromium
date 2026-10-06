@@ -1,4 +1,4 @@
-# Nachbau von libcef.dll für Neph 0.3.15
+# Nachbau von libcef.dll für Neph 0.3.17
 
 Windows 10/11 x64, Visual Studio 2022 Build Tools (C++, ATL/MFC), Windows SDK 10.0.26100, ~250 GB frei, 16 GB RAM
 (mit `chrome_pgo_phase=0 use_thin_lto=false`; ein Vollbuild dauert auf einem i5-10500 etwa 13 Stunden).

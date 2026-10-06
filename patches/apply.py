@@ -55,6 +55,10 @@ Patches
             "Chromium Embedded", and components/version_ui_strings.grdp (CEF
             patches it; chrome://version gets Neph's own page).
 
+  page_base chrome/browser/ui/views/frame/contents_web_view.cc: the page's
+            view stays opaque when CEF hides its background, so pages without
+            a background of their own are white instead of the dark theme
+            colour behind them (06.10.2026).
   program_cache  gpu/config/gpu_preferences.h: the GPU program cache holds
             64 MB instead of 6 MB (memory and disk; Skia shares the value).
   cache_scope    gpu/ipc/service/command_buffer_stub.cc: the program-cache
@@ -127,6 +131,20 @@ ZOOM_NEW = ('static constexpr double kPresetBrowserZoomFactorsArray[] = {\n'
             '    0.25, 1 / 3.0, 0.5,  2 / 3.0, 0.75, 0.8, 0.9,  1.0, 1.05, 1.1,\n'
             '    1.15, 1.2,     1.25, 1 / .75, 1.4,  1.5, 1.75, 2.0, 2.5,  3.0,\n'
             '    4.0,  5.0};  // Neph: finer steps between 100 and 150 percent')
+# page_base (06.10.2026): CEF hides the contents view's background for
+# Chrome-style browsers (chrome_browser_host_impl.cc), and the view then tells
+# the renderer to be transparent: a page without a background of its own
+# showed Chrome's themed MultiContentsBackgroundView - dark grey in Neph's
+# dark colour scheme, under the page's dark text ("on many websites you can
+# hardly read the text"). Opaque, the renderer paints the page base colour
+# CEF sets from CefBrowserSettings.background_color (white in Neph).
+PAGE_BASE_FILE = 'chrome/browser/ui/views/frame/contents_web_view.cc'
+PAGE_BASE_OLD = ('      rwhv->SetBackgroundColor(background_visible_ ? color\n'
+                 '                                                   : SK_ColorTRANSPARENT);\n')
+PAGE_BASE_NEW = ('      // Neph: opaque even when the embedder hides this view\'s background,\n'
+                 '      // so a page without its own background shows the page base colour\n'
+                 '      // instead of the themed background behind it.\n'
+                 '      rwhv->SetBackgroundColor(background_visible_ ? color : SK_ColorWHITE);\n')
 BRANDING = 'chrome/app/theme/chromium/BRANDING'
 # The GPU process keeps compiled programs in a cache of 6 MB; Neph's six sky
 # programs are about that size together, so the largest were evicted and
@@ -390,6 +408,17 @@ def patch_zoom_steps(src, written, protected):
     return 'written' if put(src, ZOOM_FILE, text.replace(ZOOM_OLD, ZOOM_NEW, 1), written) else 'in place'
 
 
+def patch_page_base(src, written, protected):
+    if PAGE_BASE_FILE in protected:
+        raise Anchor(PAGE_BASE_FILE + ' is CEF-patched now; move the page base change')
+    text = read_current(src, PAGE_BASE_FILE)
+    if PAGE_BASE_NEW in text:
+        return 'in place'
+    if PAGE_BASE_OLD not in text:
+        raise Anchor(PAGE_BASE_FILE + ': ' + PAGE_BASE_OLD.splitlines()[0].strip())
+    return 'written' if put(src, PAGE_BASE_FILE, text.replace(PAGE_BASE_OLD, PAGE_BASE_NEW, 1), written) else 'in place'
+
+
 def patch_program_cache(src, written, protected):
     if CACHE_FILE in protected:
         raise Anchor(CACHE_FILE + ' is CEF-patched now; move the cache change')
@@ -508,7 +537,7 @@ def touched_paths(src, protected):
     the committed string tables: the grd files, their parts, their xtb
     translations, plus the fixed files. CEF-patched files are excluded."""
     paths = []
-    for p in (MV2_FILE, BRANDING, CACHE_FILE, SCOPE_FILE, ZOOM_FILE, WIDEVINE_FILE, downloads_patch.CHROME_FILE) + vault_patch.FILES:
+    for p in (MV2_FILE, BRANDING, CACHE_FILE, SCOPE_FILE, ZOOM_FILE, PAGE_BASE_FILE, WIDEVINE_FILE, downloads_patch.CHROME_FILE) + vault_patch.FILES:
         if p not in protected:
             paths.append(p)
     for grd in GRDS:
@@ -600,6 +629,7 @@ def main(argv):
         optional('cache_scope', lambda: patch_cache_scope(src, written, protected))
         optional('mrt_layout', lambda: patch_mrt_layout(src, written, protected))
         optional('zoom_steps', lambda: patch_zoom_steps(src, written, protected))
+        optional('page_base', lambda: patch_page_base(src, written, protected))
         optional('downloads', lambda: patch_downloads(src, written, protected))
         # Mandatory, whatever the mode: see the module docstring.
         report['patches']['widevine'] = patch_widevine(src, written, protected)

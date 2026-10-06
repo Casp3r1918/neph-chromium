@@ -1,6 +1,6 @@
 {
  "src": "C:\\cefbuild\\chromium_git\\chromium\\src",
- "when": "2026-10-06 13:45:24",
+ "when": "2026-10-06 23:26:38",
  "product": "Neph",
  "lenient": true,
  "patches": {
@@ -9,7 +9,8 @@
   "program_cache": "in place",
   "cache_scope": "in place",
   "mrt_layout": "in place",
-  "zoom_steps": "written",
+  "zoom_steps": "in place",
+  "page_base": "in place",
   "downloads": "in place",
   "widevine": "in place",
   "vault": "in place",
@@ -77,5 +78,5 @@
   }
  },
  "optional_failed": [],
- "files_written": 1
+ "files_written": 0
 }

@@ -59,6 +59,23 @@ index c0822519d6986..bd7babd424f50 100644
    std::vector<Profile*> profiles(
        g_browser_process->profile_manager()->GetLoadedProfiles());
    for (auto it = profiles.begin(); it < profiles.end(); ++it) {
+diff --git a/chrome/browser/ui/views/frame/contents_web_view.cc b/chrome/browser/ui/views/frame/contents_web_view.cc
+index c49d4c8b7e721..4723e8748191b 100644
+--- a/chrome/browser/ui/views/frame/contents_web_view.cc
++++ b/chrome/browser/ui/views/frame/contents_web_view.cc
+@@ -207,8 +207,10 @@ void ContentsWebView::UpdateBackgroundColor() {
+     content::RenderWidgetHostView* rwhv =
+         web_contents()->GetRenderWidgetHostView();
+     if (rwhv) {
+-      rwhv->SetBackgroundColor(background_visible_ ? color
+-                                                   : SK_ColorTRANSPARENT);
++      // Neph: opaque even when the embedder hides this view's background,
++      // so a page without its own background shows the page base colour
++      // instead of the themed background behind it.
++      rwhv->SetBackgroundColor(background_visible_ ? color : SK_ColorWHITE);
+     }
+   }
+ }
 diff --git a/components/password_manager/core/browser/password_store/login_database.cc b/components/password_manager/core/browser/password_store/login_database.cc
 index f650628393a4e..2df618596360d 100644
 --- a/components/password_manager/core/browser/password_store/login_database.cc
