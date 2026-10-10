@@ -26,7 +26,7 @@ Mandatory and optional. The widevine patch is mandatory: without it the
 browser would fetch a CDM it has no licence for, so a missing anchor always
 stops the build. So is the vault patch: without it saved passwords stay under
 the key any process of the user can unwrap, whatever the settings page says.
-Everything else (mv2, branding, the three shader patches, downloads) is optional: with --lenient a missing anchor is logged, listed under
+Everything else (mv2, branding, the three shader patches, downloads, zoom_steps, page_base) is optional: with --lenient a missing anchor is logged, listed under
 "optional_failed" in neph-patches.json and the build goes on, so a security
 update never waits for a cosmetic anchor. Without --lenient every anchor is
 fatal, which is what a hand-run wants.

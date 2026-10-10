@@ -12,15 +12,15 @@ verwenden möchte, erhält die Dateien vom Herausgeber auf Anfrage als Archiv.
 every modification Neph applies, and the build instructions. Valid for at least three years after each release;
 available as an archive on request.*
 
-## Aktuelle Version: Neph 0.4.2 (2026-10-09)
+## Aktuelle Version: Neph 0.4.3 (2026-10-10)
 
 | Bestandteil | Stand | Quelle |
 |---|---|---|
-| Chromium | `152.0.7977.152` (Commit `aee7423367e1`) | https://chromium.googlesource.com/chromium/src/+/refs/tags/152.0.7977.152 |
-| CEF | `152.0.12+ge1f344f+chromium-152.0.7977.152` (Branch 7977, Commit `e1f344f`) | https://github.com/chromiumembedded/cef/commit/e1f344f |
+| Chromium | `152.0.7977.158` (Commit `900724803344`) | https://chromium.googlesource.com/chromium/src/+/refs/tags/152.0.7977.158 |
+| CEF | `152.0.13+g841e03d+chromium-152.0.7977.158` (Branch 7977, Commit `841e03d`) | https://github.com/chromiumembedded/cef/commit/841e03d |
 | ffmpeg (`third_party/ffmpeg`) | `2b68d2babae7` | https://chromium.googlesource.com/chromium/third_party/ffmpeg/+/2b68d2babae73714846961fb0ee47e3b3d2e39a9 |
-| ANGLE (`third_party/angle`) | `e80dc914f6c6` | https://chromium.googlesource.com/angle/angle/+/e80dc914f6c698f531138fb4b9798cd6bc3d7af3 |
-| Nephs Änderungen | `patches/` | dieses Repository, Tag `neph-v0.4.0` (gilt für 0.4.0 bis 0.4.2, unverändert seit `neph-v0.3.17`) |
+| ANGLE (`third_party/angle`) | `4f2e7d39252e` | https://chromium.googlesource.com/angle/angle/+/4f2e7d39252ed0e8387ebee1b222d4715f2dea7d |
+| Nephs Änderungen | `patches/` | dieses Repository, Tag `neph-v0.4.3` |
 | GN-Argumente | `build/GN_DEFINES.txt`, `build/args.gn` | dieses Repository |
 
 Alle weiteren Abhängigkeiten (DEPS) ergeben sich aus dem Chromium-Tag; `gclient sync` stellt sie exakt wieder her.
@@ -37,8 +37,7 @@ Alle weiteren Abhängigkeiten (DEPS) ergeben sich aus dem Chromium-Tag; `gclient
 - `build/BUILD.md`, `build/cef-build.ps1`, `build/GN_DEFINES.txt`, `build/args.gn`: Bauablauf und Konfiguration.
 - `LICENSES/`: Lizenztexte von Chromium, CEF, ffmpeg (LGPL 2.1) und ANGLE.
 
-Was Neph gegenüber Chromium/CEF ändert: proprietäre Codecs eingeschaltet (`proprietary_codecs=true`,
-`ffmpeg_branding=Chrome`), Manifest-V2-Erweiterungen bleiben nutzbar, Produktname „Neph“ in den Dialogen, GPU-Programm-Cache
+Was Neph gegenüber Chromium/CEF ändert: proprietäre Codecs eingeschaltet (``proprietary_codecs=true``, ``ffmpeg_branding=Chrome``), Manifest-V2-Erweiterungen bleiben nutzbar, Produktname „Neph“ in den Dialogen, GPU-Programm-Cache
 64 MB und zwei Korrekturen am Shader-Cache (Chromium, ANGLE), die Widevine-CDM-Komponente wird nur mit dem Schalter
 `--neph-widevine` registriert, gespeicherte Passwörter verschlüsselt Nephs Tresor (Master-Passwort und TPM) statt des
 Windows-Schlüssels, und Downloads melden auch nach dem Schließen ihres Tabs weiter, wachsen als `.crdownload` und werden
