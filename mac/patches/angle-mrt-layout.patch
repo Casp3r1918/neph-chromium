@@ -1,0 +1,45 @@
+diff --git a/src/libANGLE/renderer/d3d/ProgramExecutableD3D.cpp b/src/libANGLE/renderer/d3d/ProgramExecutableD3D.cpp
+index 0189418..115602f 100644
+--- a/src/libANGLE/renderer/d3d/ProgramExecutableD3D.cpp
++++ b/src/libANGLE/renderer/d3d/ProgramExecutableD3D.cpp
+@@ -76,12 +76,36 @@ void GetDefaultOutputLayoutFromShader(
+     std::vector<GLenum> *outputLayoutOut)
+ {
+     outputLayoutOut->clear();
+-
+-    if (!shaderOutputVars.empty())
++    if (shaderOutputVars.empty())
++    {
++        return;
++    }
++    // Neph: one entry per declared output location (GL_NONE for gaps), so a
++    // program writing several colour attachments gets the pixel executable
++    // for that layout at link time instead of a second, blocking compile at
++    // its first draw.
++    size_t maxLocation = 0;
++    for (const PixelShaderOutputVariable &outputVar : shaderOutputVars)
+     {
+-        size_t location = shaderOutputVars[0].outputLocation;
++        if (outputVar.outputLocation > maxLocation)
++        {
++            maxLocation = outputVar.outputLocation;
++        }
++    }
++    for (size_t location = 0; location <= maxLocation; ++location)
++    {
++        bool declared = false;
++        for (const PixelShaderOutputVariable &outputVar : shaderOutputVars)
++        {
++            declared = declared || outputVar.outputLocation == location;
++        }
++        if (!declared)
++        {
++            outputLayoutOut->push_back(GL_NONE);
++            continue;
++        }
+         size_t maxIndex = GetMaxOutputIndex(shaderOutputVars, location);
+-        outputLayoutOut->assign(maxIndex + 1,
++        outputLayoutOut->insert(outputLayoutOut->end(), maxIndex + 1,
+                                 GL_COLOR_ATTACHMENT0 + static_cast<unsigned int>(location));
+     }
+ }

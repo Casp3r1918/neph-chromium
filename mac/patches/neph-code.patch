@@ -1,0 +1,1600 @@
+diff --git a/chrome/app/theme/chromium/BRANDING b/chrome/app/theme/chromium/BRANDING
+index f8363d5b29..29a7ff9ace 100644
+--- a/chrome/app/theme/chromium/BRANDING
++++ b/chrome/app/theme/chromium/BRANDING
+@@ -1,9 +1,9 @@
+ COMPANY_FULLNAME=The Chromium Authors
+ COMPANY_SHORTNAME=The Chromium Authors
+-PRODUCT_FULLNAME=Chromium
+-PRODUCT_SHORTNAME=Chromium
+-PRODUCT_INSTALLER_FULLNAME=Chromium Installer
+-PRODUCT_INSTALLER_SHORTNAME=Chromium Installer
++PRODUCT_FULLNAME=Neph
++PRODUCT_SHORTNAME=Neph
++PRODUCT_INSTALLER_FULLNAME=Neph Installer
++PRODUCT_INSTALLER_SHORTNAME=Neph Installer
+ COPYRIGHT=Copyright @LASTCHANGE_YEAR@ The Chromium Authors. All rights reserved.
+ MAC_BUNDLE_ID=org.chromium.Chromium
+ MAC_CREATOR_CODE=Cr24
+diff --git a/chrome/browser/component_updater/registration.cc b/chrome/browser/component_updater/registration.cc
+index 9fd11c9f72..a94a3c005e 100644
+--- a/chrome/browser/component_updater/registration.cc
++++ b/chrome/browser/component_updater/registration.cc
+@@ -4,6 +4,7 @@
+ 
+ #include "chrome/browser/component_updater/registration.h"
+ 
++#include "base/command_line.h"
+ #include "base/feature_list.h"
+ #include "base/files/file_path.h"
+ #include "base/files/file_util.h"
+@@ -144,7 +145,11 @@ void RegisterComponentsForUpdate() {
+ #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
+ 
+ #if BUILDFLAG(ENABLE_WIDEVINE_CDM_COMPONENT)
+-  RegisterWidevineCdmComponent(cus);
++  // Neph: the Widevine CDM is licensed software; without an agreement the
++  // browser neither ships nor fetches it. The component updater learns
++  // about it only when the host asks with --neph-widevine.
++  if (base::CommandLine::ForCurrentProcess()->HasSwitch("neph-widevine"))
++    RegisterWidevineCdmComponent(cus);
+ #endif  // BUILDFLAG(ENABLE_WIDEVINE_CDM_COMPONENT)
+ 
+   RegisterSubresourceFilterComponent(cus);
+diff --git a/chrome/browser/download/download_core_service.cc b/chrome/browser/download/download_core_service.cc
+index c0822519d6..bd7babd424 100644
+--- a/chrome/browser/download/download_core_service.cc
++++ b/chrome/browser/download/download_core_service.cc
+@@ -43,6 +43,13 @@ int DownloadCoreService::BlockingShutdownCountAllProfiles() {
+ 
+ // static
+ void DownloadCoreService::CancelAllDownloads(CancelDownloadsTrigger trigger) {
++  // Neph: CEF gives every tab a Browser of its own and none counts as
++  // activated, so Browser::~Browser takes the close of any tab for the end of
++  // the browser and would cancel every download of the profile here. At the
++  // real end DownloadManagerImpl::Shutdown cancels what still runs.
++  if (trigger == CancelDownloadsTrigger::kShutdown) {
++    return;
++  }
+   std::vector<Profile*> profiles(
+       g_browser_process->profile_manager()->GetLoadedProfiles());
+   for (auto it = profiles.begin(); it < profiles.end(); ++it) {
+diff --git a/chrome/browser/ui/color/chrome_color_mixers.cc b/chrome/browser/ui/color/chrome_color_mixers.cc
+index 9698e807b1..0c675dc796 100644
+--- a/chrome/browser/ui/color/chrome_color_mixers.cc
++++ b/chrome/browser/ui/color/chrome_color_mixers.cc
+@@ -24,6 +24,18 @@
+ #include "chrome/browser/ui/color/tab_strip_color_mixer.h"
+ #include "ui/color/color_provider_utils.h"
+ 
++#include <algorithm>
++#include <cmath>
++
++#include "third_party/skia/include/core/SkColor.h"
++#include "ui/color/color_id.h"
++#include "ui/color/color_mixer.h"
++#include "ui/color/color_provider.h"
++#include "ui/color/color_provider_key.h"
++#include "ui/color/color_recipe.h"
++#include "ui/color/color_transform.h"
++#include "ui/gfx/color_utils.h"
++
+ namespace {
+ 
+ class ChromeColorProviderUtilsCallbacks
+@@ -53,6 +65,137 @@ bool ChromeColorProviderUtilsCallbacks::ColorIdName(
+ 
+ }  // namespace
+ 
++namespace {
++
++// Neph (15.10.2026): Chrome's own dialogs, bubbles and menus in the colours of
++// the shell (ui/styles.css, dialogs_patch.py): neutral grey surfaces, ink for
++// text, the accent - the shell's, sent as the user colour - for the prominent
++// button, the focus ring and links. The accent's text and on-colour variants
++// are derived in OKLCH, as the shell derives them.
++struct NephLch {
++  float l, c, h;
++};
++
++float NephLinear(float v) {
++  return v <= 0.04045f ? v / 12.92f : std::pow((v + 0.055f) / 1.055f, 2.4f);
++}
++
++float NephEncode(float v) {
++  v = std::clamp(v, 0.0f, 1.0f);
++  return v <= 0.0031308f ? v * 12.92f : 1.055f * std::pow(v, 1 / 2.4f) - 0.055f;
++}
++
++NephLch NephToLch(SkColor color) {
++  const float r = NephLinear(SkColorGetR(color) / 255.0f);
++  const float g = NephLinear(SkColorGetG(color) / 255.0f);
++  const float b = NephLinear(SkColorGetB(color) / 255.0f);
++  const float l = std::cbrt(0.4122214708f * r + 0.5363325363f * g + 0.0514459929f * b);
++  const float m = std::cbrt(0.2119034982f * r + 0.6806995451f * g + 0.1073969566f * b);
++  const float s = std::cbrt(0.0883024619f * r + 0.2817188376f * g + 0.6299787005f * b);
++  const float lightness = 0.2104542553f * l + 0.7936177850f * m - 0.0040720468f * s;
++  const float a = 1.9779984951f * l - 2.4285922050f * m + 0.4505937099f * s;
++  const float bb = 0.0259040371f * l + 0.7827717662f * m - 0.8086757660f * s;
++  return {lightness, std::hypot(a, bb), std::atan2(bb, a)};
++}
++
++SkColor NephFromLch(float lightness, float chroma, float hue) {
++  const float a = chroma * std::cos(hue);
++  const float b = chroma * std::sin(hue);
++  const float l = std::pow(lightness + 0.3963377774f * a + 0.2158037573f * b, 3.0f);
++  const float m = std::pow(lightness - 0.1055613458f * a - 0.0638541728f * b, 3.0f);
++  const float s = std::pow(lightness - 0.0894841775f * a - 1.2914855480f * b, 3.0f);
++  const float r = 4.0767416621f * l - 3.3077115913f * m + 0.2309699292f * s;
++  const float g = -1.2684380046f * l + 2.6097574011f * m - 0.3413193965f * s;
++  const float bl = -0.0041960863f * l - 0.7034186147f * m + 1.7076147010f * s;
++  return SkColorSetRGB(static_cast<U8CPU>(std::lround(NephEncode(r) * 255)),
++                       static_cast<U8CPU>(std::lround(NephEncode(g) * 255)),
++                       static_cast<U8CPU>(std::lround(NephEncode(bl) * 255)));
++}
++
++void AddNephColorMixer(ui::ColorProvider* provider,
++                       const ui::ColorProviderKey& key) {
++  const bool dark = key.color_mode == ui::ColorProviderKey::ColorMode::kDark;
++  // The shell's tokens, oklch converted to sRGB (dark / light).
++  const SkColor surface = dark ? SkColorSetRGB(0x0e, 0x0f, 0x11) : SkColorSetRGB(0xde, 0xdf, 0xe0);  // --s-2
++  const SkColor sunk = dark ? SkColorSetRGB(0x00, 0x00, 0x01) : SkColorSetRGB(0xb4, 0xb6, 0xb8);     // --s-sunk
++  const SkColor ink1 = dark ? SkColorSetRGB(0xf3, 0xf4, 0xf6) : SkColorSetRGB(0x14, 0x16, 0x19);
++  const SkColor ink2 = dark ? SkColorSetRGB(0xbf, 0xc0, 0xc2) : SkColorSetRGB(0x37, 0x39, 0x3c);
++  const SkColor ink3 = dark ? SkColorSetRGB(0x94, 0x96, 0x98) : SkColorSetRGB(0x45, 0x46, 0x49);
++  const SkColor ink4 = dark ? SkColorSetRGB(0x67, 0x69, 0x6b) : SkColorSetRGB(0x7a, 0x7c, 0x7f);
++  const SkColor edge_ctl = dark ? SkColorSetRGB(0x73, 0x75, 0x77) : SkColorSetRGB(0x59, 0x5b, 0x5d);
++  const SkColor error = dark ? SkColorSetRGB(0xed, 0x75, 0x6e) : SkColorSetRGB(0x91, 0x07, 0x0f);
++  // --edge-2: ink at 16 % (dark) or 22 % (light) over the surface.
++  const SkColor edge2 = color_utils::AlphaBlend(ink1, surface, dark ? 0.16f : 0.22f);
++  // --state-hover: the surface mixed with ink.
++  const SkColor hover = color_utils::AlphaBlend(ink1, surface, dark ? 0.16f : 0.14f);
++  const NephLch accent_lch = NephToLch(
++      key.user_color.value_or(dark ? SkColorSetRGB(0xa9, 0xc1, 0xd9) : SkColorSetRGB(0x3f, 0x66, 0x86)));
++  const SkColor accent = NephFromLch(dark ? 0.780f : 0.500f, accent_lch.c, accent_lch.h);
++  const SkColor accent_text = NephFromLch(dark ? 0.840f : 0.420f, accent_lch.c, accent_lch.h);
++  const SkColor accent_on = NephFromLch(dark ? 0.185f : 0.985f, dark ? 0.020f : 0.010f, accent_lch.h);
++
++  ui::ColorMixer& mixer = provider->AddMixer();
++  // Surfaces: the flyout's --s-2, its border --edge-2.
++  for (ui::ColorId id : {ui::kColorBubbleBackground, ui::kColorDialogBackground,
++                         ui::kColorBubbleFooterBackground, ui::kColorMenuBackground,
++                         ui::kColorSysSurface, ui::kColorSysSurface1, ui::kColorSysSurface2,
++                         ui::kColorSysSurface3, ui::kColorSysSurface4, ui::kColorSysSurface5}) {
++    mixer[id] = {surface};
++  }
++  for (ui::ColorId id : {ui::kColorBubbleBorder, ui::kColorBubbleFooterBorder, ui::kColorSeparator,
++                         ui::kColorMenuSeparator, ui::kColorMenuBorder, ui::kColorSysDivider}) {
++    mixer[id] = {edge2};
++  }
++  // Text and icons.
++  for (ui::ColorId id : {ui::kColorDialogForeground, ui::kColorLabelForeground,
++                         ui::kColorMenuItemForeground, ui::kColorSysOnSurface,
++                         ui::kColorButtonForeground, ui::kColorButtonForegroundTonal,
++                         ui::kColorSysOnTonalContainer, ui::kColorTextfieldForeground}) {
++    mixer[id] = {ink1};
++  }
++  for (ui::ColorId id : {ui::kColorLabelForegroundSecondary, ui::kColorSysOnSurfaceSecondary, ui::kColorIcon}) {
++    mixer[id] = {ink2};
++  }
++  for (ui::ColorId id : {ui::kColorSysOnSurfaceSubtle, ui::kColorIconSecondary,
++                         ui::kColorTextfieldForegroundPlaceholder}) {
++    mixer[id] = {ink3};
++  }
++  for (ui::ColorId id : {ui::kColorLabelForegroundDisabled, ui::kColorButtonForegroundDisabled}) {
++    mixer[id] = {ink4};
++  }
++  // Buttons: the prominent one in the accent (.primary-button), the others
++  // sunk with a control edge (.chip), as the shell's dialogs have them.
++  for (ui::ColorId id : {ui::kColorButtonBackgroundProminent, ui::kColorButtonBackgroundProminentFocused,
++                         ui::kColorSysPrimary}) {
++    mixer[id] = {accent};
++  }
++  mixer[ui::kColorButtonBackgroundProminentDisabled] = {SkColorSetA(accent, 0x5c)};
++  for (ui::ColorId id : {ui::kColorButtonForegroundProminent, ui::kColorSysOnPrimary}) {
++    mixer[id] = {accent_on};
++  }
++  for (ui::ColorId id : {ui::kColorButtonBackground, ui::kColorButtonBackgroundTonal,
++                         ui::kColorButtonBackgroundTonalFocused, ui::kColorSysTonalContainer,
++                         ui::kColorTextfieldBackground}) {
++    mixer[id] = {sunk};
++  }
++  mixer[ui::kColorButtonBackgroundTonalDisabled] = {SkColorSetA(sunk, 0x5c)};
++  for (ui::ColorId id : {ui::kColorButtonBorder, ui::kColorTextfieldOutline, ui::kColorSysNeutralOutline,
++                         ui::kColorSysTonalOutline}) {
++    mixer[id] = {edge_ctl};
++  }
++  mixer[ui::kColorButtonBorderDisabled] = {SkColorSetA(edge_ctl, 0x5c)};
++  mixer[ui::kColorTextfieldSelectionBackground] = {color_utils::AlphaBlend(accent, surface, 0.35f)};
++  mixer[ui::kColorMenuItemBackgroundSelected] = {hover};
++  // The one hue: focus, links.
++  for (ui::ColorId id : {ui::kColorFocusableBorderFocused, ui::kColorSysStateFocusRing,
++                         ui::kColorLinkForeground, ui::kColorLinkForegroundPressed}) {
++    mixer[id] = {accent_text};
++  }
++  mixer[ui::kColorTextfieldOutlineInvalid] = {error};
++}
++
++}  // namespace
++
+ void AddChromeColorMixers(ui::ColorProvider* provider,
+                           const ui::ColorProviderKey& key) {
+   static base::NoDestructor<ChromeColorProviderUtilsCallbacks>
+@@ -81,4 +224,7 @@ void AddChromeColorMixers(ui::ColorProvider* provider,
+   if (key.app_controller) {
+     key.app_controller->AddColorMixers(provider, key);
+   }
++
++  // Neph: last, so Neph's colours win (dialogs_patch.py).
++  AddNephColorMixer(provider, key);
+ }
+diff --git a/chrome/browser/ui/views/frame/contents_web_view.cc b/chrome/browser/ui/views/frame/contents_web_view.cc
+index c49d4c8b7e..4723e87481 100644
+--- a/chrome/browser/ui/views/frame/contents_web_view.cc
++++ b/chrome/browser/ui/views/frame/contents_web_view.cc
+@@ -207,8 +207,10 @@ void ContentsWebView::UpdateBackgroundColor() {
+     content::RenderWidgetHostView* rwhv =
+         web_contents()->GetRenderWidgetHostView();
+     if (rwhv) {
+-      rwhv->SetBackgroundColor(background_visible_ ? color
+-                                                   : SK_ColorTRANSPARENT);
++      // Neph: opaque even when the embedder hides this view's background,
++      // so a page without its own background shows the page base colour
++      // instead of the themed background behind it.
++      rwhv->SetBackgroundColor(background_visible_ ? color : SK_ColorWHITE);
+     }
+   }
+ }
+diff --git a/chrome/browser/ui/views/passwords/password_bubble_view_base.cc b/chrome/browser/ui/views/passwords/password_bubble_view_base.cc
+index fd0e31f533..2973691832 100644
+--- a/chrome/browser/ui/views/passwords/password_bubble_view_base.cc
++++ b/chrome/browser/ui/views/passwords/password_bubble_view_base.cc
+@@ -36,6 +36,8 @@
+ #include "components/tabs/public/tab_interface.h"
+ #include "ui/base/metadata/metadata_impl_macros.h"
+ 
++#include "base/command_line.h"  // Neph (dialogs_patch.py)
++
+ #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+ #include "chrome/browser/ui/views/passwords/password_relaunch_chrome_view.h"
+ #endif
+@@ -259,6 +261,10 @@ PasswordBubbleViewBase::~PasswordBubbleViewBase() {
+ 
+ void PasswordBubbleViewBase::SetBubbleHeader(int light_image_id,
+                                              int dark_image_id) {
++  // Neph: no illustration, as Neph's menus have none (dialogs_patch.py).
++  if (!base::CommandLine::ForCurrentProcess()->HasSwitch("neph-illustrations")) {
++    return;
++  }
+   ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
+   auto image_view = std::make_unique<ThemeTrackingNonAccessibleImageView>(
+       *bundle.GetImageSkiaNamed(light_image_id),
+@@ -279,6 +285,10 @@ void PasswordBubbleViewBase::SetBubbleHeader(int light_image_id,
+ }
+ 
+ void PasswordBubbleViewBase::SetBubbleHeaderLottie(int lottie_image_id) {
++  // Neph: no illustration, as Neph's menus have none (dialogs_patch.py).
++  if (!base::CommandLine::ForCurrentProcess()->HasSwitch("neph-illustrations")) {
++    return;
++  }
+   ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
+   auto image_view = std::make_unique<views::ImageView>(
+       bundle.GetThemedLottieImageNamed(lottie_image_id));
+diff --git a/chrome/browser/ui/views/webauthn/authenticator_request_sheet_view.cc b/chrome/browser/ui/views/webauthn/authenticator_request_sheet_view.cc
+index a462df6164..04d4602364 100644
+--- a/chrome/browser/ui/views/webauthn/authenticator_request_sheet_view.cc
++++ b/chrome/browser/ui/views/webauthn/authenticator_request_sheet_view.cc
+@@ -43,6 +43,9 @@
+ #include "ui/views/layout/layout_provider.h"
+ #include "ui/views/style/typography.h"
+ #include "ui/views/view_class_properties.h"
++
++#include "base/command_line.h"  // Neph (dialogs_patch.py)
++
+ namespace {
+ 
+ // Margins around any illustration.
+@@ -132,6 +135,10 @@ int AuthenticatorRequestSheetView::GetSpacingBetweenTitleAndDescription() {
+ 
+ std::unique_ptr<views::View>
+ AuthenticatorRequestSheetView::CreateIllustrationWithOverlays() {
++  // Neph: no illustration, as Neph's menus have none (dialogs_patch.py).
++  if (!base::CommandLine::ForCurrentProcess()->HasSwitch("neph-illustrations")) {
++    return std::make_unique<views::View>();
++  }
+   constexpr int kImageHeight = 112;
+   constexpr int kHeaderHeight =
+       kImageHeight + kImageMarginTop + kImageMarginBottom;
+diff --git a/components/password_manager/core/browser/password_store/login_database.cc b/components/password_manager/core/browser/password_store/login_database.cc
+index f650628393..0a8740bcca 100644
+--- a/components/password_manager/core/browser/password_store/login_database.cc
++++ b/components/password_manager/core/browser/password_store/login_database.cc
+@@ -59,6 +59,22 @@
+ #include "sql/sqlite_result_code_values.h"
+ #include "sql/statement.h"
+ #include "sql/transaction.h"
++
++// Neph vault: the registry of open databases and the migration run.
++#include <atomic>
++#include <vector>
++
++// The exports the host reaches (GetProcAddress on Windows, dlsym on the Mac).
++#if defined(_WIN32)
++#define NEPH_VAULT_EXPORT __declspec(dllexport)
++#else
++#define NEPH_VAULT_EXPORT __attribute__((visibility("default")))
++#endif
++
++#include "base/memory/ref_counted.h"
++#include "base/no_destructor.h"
++#include "base/synchronization/lock.h"
++#include "base/task/sequenced_task_runner.h"
+ #include "third_party/abseil-cpp/absl/cleanup/cleanup.h"
+ #include "third_party/re2/src/re2/re2.h"
+ #include "url/origin.h"
+@@ -1063,6 +1079,84 @@ bool ShouldDeleteUndecryptablePasswords(
+ 
+ }  // namespace
+ 
++// Neph vault -----------------------------------------------------------------
++// What the store tells the vault hooks about the call it is in (read through
++// NephVaultPurpose() by login_database_win.cc): 1 a page asking for passwords
++// to fill, 2 a password being saved, 0 anything Chromium does in the
++// background. The hooks use it to open the unlock dialog only for what the
++// user is doing.
++namespace {
++
++thread_local int g_neph_purpose = 0;
++
++class NephPurposeScope {
++ public:
++  explicit NephPurposeScope(int purpose) : previous_(g_neph_purpose) {
++    g_neph_purpose = purpose;
++  }
++  NephPurposeScope(const NephPurposeScope&) = delete;
++  NephPurposeScope& operator=(const NephPurposeScope&) = delete;
++  ~NephPurposeScope() { g_neph_purpose = previous_; }
++
++ private:
++  const int previous_;
++};
++
++bool NephIsVaultBlob(const std::string& blob) {
++  return blob.size() >= 3 && blob[0] == 'N' && blob[1] == 'V' && blob[2] == '1';
++}
++
++// Neph never lets the store delete a password because it cannot be decrypted:
++// with the vault closed that is every password.
++bool NephNeverDeleteUndecryptable() {
++  return true;
++}
++
++// The databases that are open, each with the sequence it lives on: the host
++// reaches them through neph_vault_migrate, and a task runs on that sequence.
++struct NephDatabaseEntry {
++  LoginDatabase* database;
++  scoped_refptr<base::SequencedTaskRunner> runner;
++};
++
++base::Lock& NephRegistryLock() {
++  static base::NoDestructor<base::Lock> lock;
++  return *lock;
++}
++
++std::vector<NephDatabaseEntry>& NephRegistry() {
++  static base::NoDestructor<std::vector<NephDatabaseEntry>> registry;
++  return *registry;
++}
++
++void NephRegisterDatabase(LoginDatabase* database) {
++  if (!base::SequencedTaskRunner::HasCurrentDefault()) {
++    return;
++  }
++  base::AutoLock lock(NephRegistryLock());
++  for (const auto& entry : NephRegistry()) {
++    if (entry.database == database) {
++      return;
++    }
++  }
++  NephRegistry().push_back(
++      {database, base::SequencedTaskRunner::GetCurrentDefault()});
++}
++
++void NephUnregisterDatabase(LoginDatabase* database) {
++  base::AutoLock lock(NephRegistryLock());
++  std::erase_if(NephRegistry(), [database](const NephDatabaseEntry& entry) {
++    return entry.database == database;
++  });
++}
++
++}  // namespace
++
++int NephVaultPurpose();
++int NephVaultPurpose() {
++  return g_neph_purpose;
++}
++
+ struct LoginDatabase::PrimaryKeyAndPassword {
+   int primary_key;
+   std::u16string decrypted_password;
+@@ -1079,12 +1173,15 @@ LoginDatabase::LoginDatabase(const base::FilePath& db_path,
+           /*tag=*/"Passwords"),
+       is_deleting_undecryptable_logins_enabled_by_policy_(can_delete) {}
+ 
+-LoginDatabase::~LoginDatabase() = default;
++LoginDatabase::~LoginDatabase() {
++  NephUnregisterDatabase(this);
++}
+ 
+ bool LoginDatabase::Init(
+     OnUndecryptablePasswordsRemoved on_undecryptable_passwords_removed,
+     scoped_refptr<os_crypt_async::Encryptor> encryptor) {
+   TRACE_EVENT0("passwords", "LoginDatabase::Init");
++  NephRegisterDatabase(this);
+   on_undecryptable_passwords_removed_ =
+       std::move(on_undecryptable_passwords_removed);
+   encryptor_ = std::move(encryptor);
+@@ -1308,6 +1405,7 @@ void LoginDatabase::ReportMetrics() {
+ PasswordStoreChangeList LoginDatabase::AddLogin(StoredCredential cred,
+                                                 AddCredentialError* error) {
+   TRACE_EVENT0("passwords", "LoginDatabase::AddLogin");
++  NephPurposeScope neph_purpose(2);
+   if (error) {
+     *error = AddCredentialError::kNone;
+   }
+@@ -1416,6 +1514,7 @@ PasswordStoreChangeList LoginDatabase::UpdateLogin(
+     const StoredCredential& cred,
+     UpdateCredentialError* error) {
+   TRACE_EVENT0("passwords", "LoginDatabase::UpdateLogin");
++  NephPurposeScope neph_purpose(2);
+   if (error) {
+     *error = UpdateCredentialError::kNone;
+   }
+@@ -1745,6 +1844,7 @@ bool LoginDatabase::GetLogins(const PasswordFormDigest& form,
+                               bool should_PSL_matching_apply,
+                               std::vector<StoredCredential>* credentials) {
+   TRACE_EVENT0("passwords", "LoginDatabase::GetLogins");
++  NephPurposeScope neph_purpose(1);
+   CHECK(credentials);
+   credentials->clear();
+ 
+@@ -1898,7 +1998,9 @@ DatabaseCleanupResult LoginDatabase::DeleteUndecryptableLogins() {
+   TRACE_EVENT0("passwords", "LoginDatabase::DeleteUndecryptableLogins");
+   // If the Keychain in MacOS or the real secret key in Linux is unavailable,
+   // don't delete any logins.
+-  if (!encryptor_ || !encryptor_->IsEncryptionAvailable()) {
++  // Neph: never. A closed vault makes every password look undecryptable.
++  if (NephNeverDeleteUndecryptable() || !encryptor_ ||
++      !encryptor_->IsEncryptionAvailable()) {
+     metrics_util::LogDeleteUndecryptableLoginsReturnValue(
+         metrics_util::DeleteCorruptedPasswordsResult::kEncryptionUnavailable);
+     return DatabaseCleanupResult::kEncryptionUnavailable;
+@@ -2372,4 +2474,209 @@ bool LoginDatabase::UpdatePasswordNotes(
+   return true;
+ }
+ 
++// Neph vault: converts the passwords that are still in Chromium's own format
++// (an OS-key blob) to the vault's. Runs on the database's sequence with the
++// vault open (the hooks refuse otherwise), in one transaction, and every new
++// blob is read back before it replaces the old one. A password the OS key
++// cannot open is counted in |failed| and left as it is; false means nothing
++// could be done (database closed, transaction failed).
++bool LoginDatabase::NephMigrateLegacyToVault(int* migrated, int* failed) {
++  *migrated = 0;
++  *failed = 0;
++  if (!db_.is_open() || !encryptor_ || !encryptor_->IsEncryptionAvailable()) {
++    return false;
++  }
++  struct Row {
++    int id;
++    std::string blob;
++  };
++  const auto collect = [this](base::cstring_view sql) {
++    std::vector<Row> rows;
++    sql::Statement select(db_.GetUniqueStatement(sql));
++    while (select.Step()) {
++      std::string blob = select.ColumnBlobAsString(1);
++      if (!blob.empty() && !NephIsVaultBlob(blob)) {
++        rows.push_back({select.ColumnInt(0), std::move(blob)});
++      }
++    }
++    return rows;
++  };
++  const std::vector<Row> passwords =
++      collect("SELECT id, password_value FROM logins");
++  const std::vector<Row> notes =
++      db_.DoesTableExist("password_notes")
++          ? collect("SELECT id, value FROM password_notes")
++          : std::vector<Row>();
++  if (passwords.empty() && notes.empty()) {
++    return true;
++  }
++  sql::Transaction transaction(&db_);
++  if (!transaction.Begin()) {
++    return false;
++  }
++  const auto convert = [this](const std::string& blob, std::string* fresh) {
++    std::u16string plain;
++    std::u16string check;
++    return encryptor_->DecryptString16(blob, &plain) &&
++           EncryptedString(plain, fresh) == EncryptionResult::kSuccess &&
++           DecryptedString(*fresh, &check) == EncryptionResult::kSuccess &&
++           check == plain;
++  };
++  for (const Row& row : passwords) {
++    std::string fresh;
++    if (!convert(row.blob, &fresh)) {
++      ++*failed;
++      continue;
++    }
++    sql::Statement update(db_.GetUniqueStatement(
++        "UPDATE logins SET password_value = ? WHERE id = ?"));
++    update.BindBlob(0, fresh);
++    update.BindInt(1, row.id);
++    if (!update.Run()) {
++      return false;
++    }
++    ++*migrated;
++  }
++  for (const Row& row : notes) {
++    std::string fresh;
++    if (!convert(row.blob, &fresh)) {
++      ++*failed;
++      continue;
++    }
++    sql::Statement update(db_.GetUniqueStatement(
++        "UPDATE password_notes SET value = ? WHERE id = ?"));
++    update.BindBlob(0, fresh);
++    update.BindInt(1, row.id);
++    if (!update.Run()) {
++      return false;
++    }
++    ++*migrated;
++  }
++  return transaction.Commit();
++}
++
++// Neph vault: the master password is forgotten and the vault is reset, so the
++// passwords it protected are gone for good; what is left of them in the
++// store would only make every page that has one fail. Entries without a
++// password (never save, federated) stay. Database sequence only.
++bool LoginDatabase::NephWipePasswords(int* removed) {
++  *removed = 0;
++  if (!db_.is_open()) {
++    return false;
++  }
++  sql::Statement wipe(db_.GetUniqueStatement(
++      "DELETE FROM logins WHERE length(password_value) > 0"));
++  if (!wipe.Run()) {
++    return false;
++  }
++  *removed = static_cast<int>(db_.GetLastChangeCount());
++  return true;
++}
++
++namespace {
++
++// One call of neph_vault_migrate or neph_vault_wipe over every open database;
++// the last database to finish reports.
++class NephMigrationRun : public base::RefCountedThreadSafe<NephMigrationRun> {
++ public:
++  NephMigrationRun(void (*done)(void*, int, int, int),
++                   void* context,
++                   size_t pending)
++      : done_(done), context_(context), pending_(pending) {}
++
++  void Finish(bool ok, int migrated, int failed) {
++    int status = 0;
++    int migrated_total = 0;
++    int failed_total = 0;
++    {
++      base::AutoLock lock(lock_);
++      if (!ok) {
++        status_ = -2;
++      }
++      migrated_ += migrated;
++      failed_ += failed;
++      if (--pending_ != 0) {
++        return;
++      }
++      status = status_;
++      migrated_total = migrated_;
++      failed_total = failed_;
++    }
++    done_(context_, status, migrated_total, failed_total);
++  }
++
++ private:
++  friend class base::RefCountedThreadSafe<NephMigrationRun>;
++  ~NephMigrationRun() = default;
++
++  void (*const done_)(void*, int, int, int);
++  void* const context_;
++  base::Lock lock_;
++  size_t pending_;
++  int status_ = 0;
++  int migrated_ = 0;
++  int failed_ = 0;
++};
++
++void NephMaintainOne(LoginDatabase* database,
++                     bool wipe,
++                     scoped_refptr<NephMigrationRun> run) {
++  bool open = false;
++  {
++    base::AutoLock lock(NephRegistryLock());
++    for (const auto& entry : NephRegistry()) {
++      open = open || entry.database == database;
++    }
++  }
++  int migrated = 0;
++  int failed = 0;
++  bool ok = false;
++  if (open && wipe) {
++    ok = database->NephWipePasswords(&migrated);
++  } else if (open) {
++    ok = database->NephMigrateLegacyToVault(&migrated, &failed);
++  }
++  run->Finish(ok, migrated, failed);
++}
++
++}  // namespace
++
++// status -1: no database is open yet (the host asks again), -2: a database
++// could not be done (the vault is closed, the transaction failed). For a wipe
++// the first number after the status is how many passwords were deleted.
++void NephStartMaintenance(bool wipe,
++                          void (*done)(void*, int, int, int),
++                          void* context);
++void NephStartMaintenance(bool wipe,
++                          void (*done)(void*, int, int, int),
++                          void* context) {
++  std::vector<NephDatabaseEntry> entries;
++  {
++    base::AutoLock lock(NephRegistryLock());
++    entries = NephRegistry();
++  }
++  if (entries.empty()) {
++    done(context, -1, 0, 0);
++    return;
++  }
++  auto run = base::MakeRefCounted<NephMigrationRun>(done, context, entries.size());
++  for (const auto& entry : entries) {
++    entry.runner->PostTask(
++        FROM_HERE,
++        base::BindOnce(&NephMaintainOne, entry.database, wipe, run));
++  }
++}
++
+ }  // namespace password_manager
++
++extern "C" NEPH_VAULT_EXPORT void neph_vault_migrate(
++    void (*done)(void*, int, int, int),
++    void* context) {
++  password_manager::NephStartMaintenance(false, done, context);
++}
++
++extern "C" NEPH_VAULT_EXPORT void neph_vault_wipe(
++    void (*done)(void*, int, int, int),
++    void* context) {
++  password_manager::NephStartMaintenance(true, done, context);
++}
+diff --git a/components/password_manager/core/browser/password_store/login_database.h b/components/password_manager/core/browser/password_store/login_database.h
+index 4dd8d3fc61..385c1b8fd1 100644
+--- a/components/password_manager/core/browser/password_store/login_database.h
++++ b/components/password_manager/core/browser/password_store/login_database.h
+@@ -188,6 +188,12 @@ class LoginDatabase : public EncryptDecryptInterface {
+   // removed from the database, returns ITEM_FAILURE.
+   DatabaseCleanupResult DeleteUndecryptableLogins();
+ 
++  // Neph vault (see login_database.cc), database sequence only: converts the
++  // passwords still in Chromium's OS-key format to the vault's; deletes every
++  // saved password (the "never save" entries stay) once the vault is reset.
++  bool NephMigrateLegacyToVault(int* migrated, int* failed);
++  bool NephWipePasswords(int* removed);
++
+   // Callers that requires transaction support should call these methods to
+   // begin, rollback and commit transactions. They delegate to the transaction
+   // support of the underlying database. Only one transaction may exist at a
+diff --git a/components/password_manager/core/browser/password_store/login_database_mac.cc b/components/password_manager/core/browser/password_store/login_database_mac.cc
+index acf01bdd66..7ccc9d6d8a 100644
+--- a/components/password_manager/core/browser/password_store/login_database_mac.cc
++++ b/components/password_manager/core/browser/password_store/login_database_mac.cc
+@@ -2,26 +2,156 @@
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
+ 
++// Neph vault: password blobs are encrypted by the host's vault (a master
++// password plus a TPM-sealed device secret) instead of the OS key. The host
++// registers its hooks through neph_vault_set_hooks, exported by the framework, before
++// Chromium starts. With no hooks nothing is encrypted and nothing is
++// decrypted, so no password can be written under the OS key by accident.
++// scripts/chromium-patches/vault_patch.py owns this file; src/native/vault_hooks.h
++// holds the same ABI on the host side.
++
+ #include "components/password_manager/core/browser/password_store/login_database.h"
+ 
++#include <string.h>
++
++#include <atomic>
++#include <cstddef>
++#include <cstdint>
++#include <string>
++#include <string_view>
++#include <vector>
++
++#include "base/strings/string_util.h"
++#include "base/strings/utf_string_conversions.h"
+ #include "components/os_crypt/async/common/encryptor.h"
+ 
++extern "C" {
++struct NephVaultHooks {
++  uint32_t size;
++  uint32_t version;
++  // 0 ok, otherwise a status of the host's vault; |out_size| is the size
++  // written or needed. Buffers belong to the caller.
++  int (*encrypt)(const uint8_t* plain, size_t plain_size, uint8_t* out,
++                 size_t capacity, size_t* out_size, int purpose);
++  int (*decrypt)(const uint8_t* blob, size_t blob_size, uint8_t* out,
++                 size_t capacity, size_t* out_size, int purpose);
++  // 1 while blobs in Chromium's old format may still be read.
++  int (*legacy_allowed)(void);
++};
++}  // extern "C"
++
+ namespace password_manager {
+ 
++// Defined in login_database.cc: why the store is calling.
++int NephVaultPurpose();
++
++namespace {
++
++constexpr int kNephStatusNotVaultBlob = 3;
++constexpr int kNephStatusBufferTooSmall = 5;
++
++std::atomic<const NephVaultHooks*> g_neph_hooks{nullptr};
++
++void NephWipe(std::string& text) {
++  if (!text.empty()) {
++    volatile char* p = text.data();
++    for (size_t i = 0; i < text.size(); ++i) p[i] = 0;
++  }
++}
++
++void NephWipe(std::vector<uint8_t>& bytes) {
++  if (!bytes.empty()) {
++    volatile uint8_t* p = bytes.data();
++    for (size_t i = 0; i < bytes.size(); ++i) p[i] = 0;
++  }
++}
++
++}  // namespace
++
++extern "C" __attribute__((visibility("default"))) void neph_vault_set_hooks(
++    const NephVaultHooks* hooks) {
++  g_neph_hooks.store(hooks && hooks->version == 1 &&
++                             hooks->size >= sizeof(NephVaultHooks)
++                         ? hooks
++                         : nullptr);
++}
++
+ EncryptionResult LoginDatabase::EncryptedString(
+     const std::u16string& plain_text,
+     std::string* cipher_text) const {
+-  return encryptor_ && encryptor_->EncryptString16(plain_text, cipher_text)
+-             ? EncryptionResult::kSuccess
+-             : EncryptionResult::kServiceFailure;
++  // An empty password (a "never save" entry, a federated login) holds no
++  // secret: it is stored empty, and DecryptedString reads it back as empty.
++  if (plain_text.empty()) {
++    cipher_text->clear();
++    return EncryptionResult::kSuccess;
++  }
++  const NephVaultHooks* hooks = g_neph_hooks.load();
++  if (!hooks) {
++    return EncryptionResult::kServiceFailure;
++  }
++  std::string plain = base::UTF16ToUTF8(plain_text);
++  std::vector<uint8_t> out(plain.size() + 64);
++  size_t out_size = 0;
++  int status = hooks->encrypt(reinterpret_cast<const uint8_t*>(plain.data()),
++                              plain.size(), out.data(), out.size(), &out_size,
++                              NephVaultPurpose());
++  if (status == kNephStatusBufferTooSmall && out_size > out.size()) {
++    out.assign(out_size, 0);
++    status = hooks->encrypt(reinterpret_cast<const uint8_t*>(plain.data()),
++                            plain.size(), out.data(), out.size(), &out_size,
++                            NephVaultPurpose());
++  }
++  NephWipe(plain);
++  if (status != 0 || out_size > out.size()) {
++    NephWipe(out);
++    return EncryptionResult::kServiceFailure;
++  }
++  cipher_text->assign(reinterpret_cast<const char*>(out.data()), out_size);
++  NephWipe(out);
++  return EncryptionResult::kSuccess;
+ }
+ 
+ EncryptionResult LoginDatabase::DecryptedString(
+     const std::string& cipher_text,
+     std::u16string* plain_text) const {
+-  return encryptor_ && encryptor_->DecryptString16(cipher_text, plain_text)
+-             ? EncryptionResult::kSuccess
+-             : EncryptionResult::kServiceFailure;
++  // Unittests need to read sample database entries. If these entries had real
++  // passwords, their encoding would need to be different for every platform.
++  // To avoid the need for that, the entries have empty passwords.
++  // os_crypt_async does not recognise the empty string as a valid
++  // encrypted string. Changing that for all clients of os_crypt_async could
++  // have too broad an impact, therefore to allow platform-independent data
++  // files for LoginDatabase tests, the special handling of the empty string
++  // is added below instead.
++  // See also https://codereview.chromium.org/2291123008/#msg14 for a
++  // discussion.
++  if (cipher_text.empty()) {
++    plain_text->clear();
++    return EncryptionResult::kSuccess;
++  }
++  const NephVaultHooks* hooks = g_neph_hooks.load();
++  if (!hooks) {
++    return EncryptionResult::kServiceFailure;
++  }
++  std::vector<uint8_t> out(cipher_text.size());
++  size_t out_size = 0;
++  const int status = hooks->decrypt(
++      reinterpret_cast<const uint8_t*>(cipher_text.data()), cipher_text.size(),
++      out.data(), out.size(), &out_size, NephVaultPurpose());
++  if (status == 0 && out_size <= out.size()) {
++    *plain_text = base::UTF8ToUTF16(std::string_view(
++        reinterpret_cast<const char*>(out.data()), out_size));
++    NephWipe(out);
++    return EncryptionResult::kSuccess;
++  }
++  NephWipe(out);
++  if (status == kNephStatusNotVaultBlob && hooks->legacy_allowed()) {
++    // A password from before the vault, in Chromium's own format: readable
++    // until the migration has converted every one of them.
++    return encryptor_ && encryptor_->DecryptString16(cipher_text, plain_text)
++               ? EncryptionResult::kSuccess
++               : EncryptionResult::kServiceFailure;
++  }
++  return EncryptionResult::kServiceFailure;
+ }
+ 
+ }  // namespace password_manager
+diff --git a/components/password_manager/core/browser/password_store/login_database_win.cc b/components/password_manager/core/browser/password_store/login_database_win.cc
+index 4c3483ac44..3190e5e4bc 100644
+--- a/components/password_manager/core/browser/password_store/login_database_win.cc
++++ b/components/password_manager/core/browser/password_store/login_database_win.cc
+@@ -2,20 +2,111 @@
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
+ 
++// Neph vault: password blobs are encrypted by the host's vault (a master
++// password plus a TPM-sealed device secret) instead of the OS key. The host
++// registers its hooks through neph_vault_set_hooks, exported by libcef, before
++// Chromium starts. With no hooks nothing is encrypted and nothing is
++// decrypted, so no password can be written under the OS key by accident.
++// scripts/chromium-patches/vault_patch.py owns this file; src/native/vault_hooks.h
++// holds the same ABI on the host side.
++
+ #include "components/password_manager/core/browser/password_store/login_database.h"
+ 
++#include <windows.h>
++
++#include <atomic>
++#include <cstddef>
++#include <cstdint>
++#include <string>
++#include <string_view>
++#include <vector>
++
+ #include "base/strings/string_util.h"
++#include "base/strings/utf_string_conversions.h"
+ #include "components/os_crypt/async/common/encryptor.h"
+ 
++extern "C" {
++struct NephVaultHooks {
++  uint32_t size;
++  uint32_t version;
++  // 0 ok, otherwise a status of the host's vault; |out_size| is the size
++  // written or needed. Buffers belong to the caller.
++  int (*encrypt)(const uint8_t* plain, size_t plain_size, uint8_t* out,
++                 size_t capacity, size_t* out_size, int purpose);
++  int (*decrypt)(const uint8_t* blob, size_t blob_size, uint8_t* out,
++                 size_t capacity, size_t* out_size, int purpose);
++  // 1 while blobs in Chromium's old format may still be read.
++  int (*legacy_allowed)(void);
++};
++}  // extern "C"
++
+ namespace password_manager {
+ 
++// Defined in login_database.cc: why the store is calling.
++int NephVaultPurpose();
++
++namespace {
++
++constexpr int kNephStatusNotVaultBlob = 3;
++constexpr int kNephStatusBufferTooSmall = 5;
++
++std::atomic<const NephVaultHooks*> g_neph_hooks{nullptr};
++
++void NephWipe(std::string& text) {
++  if (!text.empty()) {
++    SecureZeroMemory(text.data(), text.size());
++  }
++}
++
++void NephWipe(std::vector<uint8_t>& bytes) {
++  if (!bytes.empty()) {
++    SecureZeroMemory(bytes.data(), bytes.size());
++  }
++}
++
++}  // namespace
++
++extern "C" __declspec(dllexport) void neph_vault_set_hooks(
++    const NephVaultHooks* hooks) {
++  g_neph_hooks.store(hooks && hooks->version == 1 &&
++                             hooks->size >= sizeof(NephVaultHooks)
++                         ? hooks
++                         : nullptr);
++}
++
+ EncryptionResult LoginDatabase::EncryptedString(
+     const std::u16string& plain_text,
+     std::string* cipher_text) const {
+-  bool result =
+-      encryptor_ && encryptor_->EncryptString16(plain_text, cipher_text);
+-  return result ? EncryptionResult::kSuccess
+-                : EncryptionResult::kServiceFailure;
++  // An empty password (a "never save" entry, a federated login) holds no
++  // secret: it is stored empty, and DecryptedString reads it back as empty.
++  if (plain_text.empty()) {
++    cipher_text->clear();
++    return EncryptionResult::kSuccess;
++  }
++  const NephVaultHooks* hooks = g_neph_hooks.load();
++  if (!hooks) {
++    return EncryptionResult::kServiceFailure;
++  }
++  std::string plain = base::UTF16ToUTF8(plain_text);
++  std::vector<uint8_t> out(plain.size() + 64);
++  size_t out_size = 0;
++  int status = hooks->encrypt(reinterpret_cast<const uint8_t*>(plain.data()),
++                              plain.size(), out.data(), out.size(), &out_size,
++                              NephVaultPurpose());
++  if (status == kNephStatusBufferTooSmall && out_size > out.size()) {
++    out.assign(out_size, 0);
++    status = hooks->encrypt(reinterpret_cast<const uint8_t*>(plain.data()),
++                            plain.size(), out.data(), out.size(), &out_size,
++                            NephVaultPurpose());
++  }
++  NephWipe(plain);
++  if (status != 0 || out_size > out.size()) {
++    NephWipe(out);
++    return EncryptionResult::kServiceFailure;
++  }
++  cipher_text->assign(reinterpret_cast<const char*>(out.data()), out_size);
++  NephWipe(out);
++  return EncryptionResult::kSuccess;
+ }
+ 
+ EncryptionResult LoginDatabase::DecryptedString(
+@@ -35,11 +126,30 @@ EncryptionResult LoginDatabase::DecryptedString(
+     plain_text->clear();
+     return EncryptionResult::kSuccess;
+   }
+-
+-  bool result =
+-      encryptor_ && encryptor_->DecryptString16(cipher_text, plain_text);
+-  return result ? EncryptionResult::kSuccess
+-                : EncryptionResult::kServiceFailure;
++  const NephVaultHooks* hooks = g_neph_hooks.load();
++  if (!hooks) {
++    return EncryptionResult::kServiceFailure;
++  }
++  std::vector<uint8_t> out(cipher_text.size());
++  size_t out_size = 0;
++  const int status = hooks->decrypt(
++      reinterpret_cast<const uint8_t*>(cipher_text.data()), cipher_text.size(),
++      out.data(), out.size(), &out_size, NephVaultPurpose());
++  if (status == 0 && out_size <= out.size()) {
++    *plain_text = base::UTF8ToUTF16(std::string_view(
++        reinterpret_cast<const char*>(out.data()), out_size));
++    NephWipe(out);
++    return EncryptionResult::kSuccess;
++  }
++  NephWipe(out);
++  if (status == kNephStatusNotVaultBlob && hooks->legacy_allowed()) {
++    // A password from before the vault, in Chromium's own format: readable
++    // until the migration has converted every one of them.
++    return encryptor_ && encryptor_->DecryptString16(cipher_text, plain_text)
++               ? EncryptionResult::kSuccess
++               : EncryptionResult::kServiceFailure;
++  }
++  return EncryptionResult::kServiceFailure;
+ }
+ 
+ }  // namespace password_manager
+diff --git a/components/signin/internal/identity_manager/gaia_cookie_manager_service.cc b/components/signin/internal/identity_manager/gaia_cookie_manager_service.cc
+index db2e0266aa..68127145f5 100644
+--- a/components/signin/internal/identity_manager/gaia_cookie_manager_service.cc
++++ b/components/signin/internal/identity_manager/gaia_cookie_manager_service.cc
+@@ -14,6 +14,7 @@
+ #include <utility>
+ #include <vector>
+ 
++#include "base/command_line.h"
+ #include "base/feature_list.h"
+ #include "base/functional/bind.h"
+ #include "base/functional/callback.h"
+@@ -525,6 +526,10 @@ GaiaCookieManagerService::GetCachedListAccounts() {
+ }
+ 
+ void GaiaCookieManagerService::TriggerListAccounts() {
++  // Neph: no Google sign-in, so no /ListAccounts request either.
++  if (!base::CommandLine::ForCurrentProcess()->HasSwitch("neph-list-accounts")) {
++    return;
++  }
+   // Callers suspect that a check to Gaia needs to be done, don't rely on the
+   // in progress request, conditions might have changed while the request is
+   // in-flight.
+diff --git a/extensions/browser/manifest_v2_handler.cc b/extensions/browser/manifest_v2_handler.cc
+index 5841d3dfbc..32fef85bd4 100644
+--- a/extensions/browser/manifest_v2_handler.cc
++++ b/extensions/browser/manifest_v2_handler.cc
+@@ -32,7 +32,7 @@ namespace extensions {
+ namespace {
+ 
+ // Whether to override the MV2 deprecation for testing purposes.
+-bool g_allow_mv2_for_testing = false;
++bool g_allow_mv2_for_testing = true;  // Neph: Manifest V2 stays supported.
+ 
+ // Returns the suffix to use for histograms related to the manifest location
+ // grouping.
+diff --git a/gpu/config/gpu_preferences.h b/gpu/config/gpu_preferences.h
+index 841774d3e5..101780a8ac 100644
+--- a/gpu/config/gpu_preferences.h
++++ b/gpu/config/gpu_preferences.h
+@@ -23,7 +23,7 @@ namespace gpu {
+ 
+ // The size to set for the program cache for default and low-end device cases.
+ #if !BUILDFLAG(IS_ANDROID)
+-const size_t kDefaultMaxProgramCacheMemoryBytes = 6 * 1024 * 1024;
++const size_t kDefaultMaxProgramCacheMemoryBytes = 64 * 1024 * 1024;  // Neph: room for the sky shaders (was 6 MB)
+ #else
+ const size_t kDefaultMaxProgramCacheMemoryBytes = 2 * 1024 * 1024;
+ const size_t kLowEndMaxProgramCacheMemoryBytes = 128 * 1024;
+diff --git a/gpu/ipc/service/command_buffer_stub.cc b/gpu/ipc/service/command_buffer_stub.cc
+index 67abe9533c..54fd317636 100644
+--- a/gpu/ipc/service/command_buffer_stub.cc
++++ b/gpu/ipc/service/command_buffer_stub.cc
+@@ -198,10 +198,12 @@ void CommandBufferStub::PerformWork() {
+   // TODO(sunnyps): Should this use ScopedCrashKey instead?
+   crash_keys::gpu_gl_context_is_virtual.Set(use_virtualized_gl_context_ ? "1"
+                                                                         : "0");
+-  if (decoder_context_.get() && !MakeCurrent())
+-    return;
++  // Neph: the cache scope before MakeCurrent(), which processes the pending
++  // program-completion queries; ANGLE caches the linked binary right there.
+   std::optional<gles2::ProgramCache::ScopedCacheUse> cache_use;
+   CreateCacheUse(cache_use);
++  if (decoder_context_.get() && !MakeCurrent())
++    return;
+ 
+   if (decoder_context_) {
+     uint32_t current_unprocessed_num =
+@@ -757,9 +759,14 @@ CommandBufferStub::ScopedContextOperation::ScopedContextOperation(
+     CommandBufferStub& stub)
+     : stub_(stub) {
+   stub_.UpdateActiveUrl();
+-  if (stub_.decoder_context_ && stub_.MakeCurrent()) {
+-    have_context_ = true;
++  if (stub_.decoder_context_) {
++    // Neph: see PerformWork - the scope has to cover MakeCurrent().
+     stub_.CreateCacheUse(cache_use_);
++    if (stub_.MakeCurrent()) {
++      have_context_ = true;
++    } else {
++      cache_use_.reset();
++    }
+   }
+ }
+ 
+diff --git a/third_party/blink/common/page/page_zoom.cc b/third_party/blink/common/page/page_zoom.cc
+index 9d8df89ffc..046051713a 100644
+--- a/third_party/blink/common/page/page_zoom.cc
++++ b/third_party/blink/common/page/page_zoom.cc
+@@ -11,8 +11,9 @@
+ namespace blink {
+ 
+ static constexpr double kPresetBrowserZoomFactorsArray[] = {
+-    0.25, 1 / 3.0, 0.5,  2 / 3.0, 0.75, 0.8, 0.9, 1.0, 1.1,
+-    1.25, 1.5,     1.75, 2.0,     2.5,  3.0, 4.0, 5.0};
++    0.25, 1 / 3.0, 0.5,  2 / 3.0, 0.75, 0.8, 0.9,  1.0, 1.05, 1.1,
++    1.15, 1.2,     1.25, 1 / .75, 1.4,  1.5, 1.75, 2.0, 2.5,  3.0,
++    4.0,  5.0};  // Neph: finer steps between 100 and 150 percent
+ const base::span<const double> kPresetBrowserZoomFactors(
+     kPresetBrowserZoomFactorsArray);
+ 
+diff --git a/ui/gfx/canvas.cc b/ui/gfx/canvas.cc
+index 20e2e2b4a0..6aa8c38456 100644
+--- a/ui/gfx/canvas.cc
++++ b/ui/gfx/canvas.cc
+@@ -38,6 +38,48 @@
+ #include "ui/gfx/skia_paint_util.h"
+ #include "ui/gfx/switches.h"
+ 
++// Neph (15.10.2026): every radius is a chamfer, as corner-shape:bevel in the
++// shell (ui/styles.css): Chrome's dialogs, bubbles and controls get the cut
++// corners of Neph's own menus (scripts/chromium-patches/dialogs_patch.py).
++#include <algorithm>
++
++#include "third_party/skia/include/core/SkPathBuilder.h"
++#include "third_party/skia/include/core/SkRRect.h"
++
++namespace {
++
++[[maybe_unused]] SkPath NephBevel(const SkRect& r,
++                                  SkScalar ul,
++                                  SkScalar ur,
++                                  SkScalar lr,
++                                  SkScalar ll) {
++  const SkScalar half = std::min(r.width(), r.height()) / 2;
++  ul = std::max<SkScalar>(0, std::min(ul, half));
++  ur = std::max<SkScalar>(0, std::min(ur, half));
++  lr = std::max<SkScalar>(0, std::min(lr, half));
++  ll = std::max<SkScalar>(0, std::min(ll, half));
++  SkPathBuilder path;
++  path.moveTo(r.fLeft + ul, r.fTop);
++  path.lineTo(r.fRight - ur, r.fTop);
++  path.lineTo(r.fRight, r.fTop + ur);
++  path.lineTo(r.fRight, r.fBottom - lr);
++  path.lineTo(r.fRight - lr, r.fBottom);
++  path.lineTo(r.fLeft + ll, r.fBottom);
++  path.lineTo(r.fLeft, r.fBottom - ll);
++  path.lineTo(r.fLeft, r.fTop + ul);
++  path.close();
++  return path.detach();
++}
++
++[[maybe_unused]] SkPath NephBevel(const SkRRect& rr) {
++  return NephBevel(rr.rect(), rr.radii(SkRRect::kUpperLeft_Corner).x(),
++                   rr.radii(SkRRect::kUpperRight_Corner).x(),
++                   rr.radii(SkRRect::kLowerRight_Corner).x(),
++                   rr.radii(SkRRect::kLowerLeft_Corner).x());
++}
++
++}  // namespace
++
+ namespace gfx {
+ 
+ namespace {
+@@ -332,6 +374,12 @@ void Canvas::DrawRoundRect(const Rect& rect,
+ void Canvas::DrawRoundRect(const RectF& rect,
+                            float radius,
+                            const cc::PaintFlags& flags) {
++  // Neph: a chamfer where Chrome rounds (dialogs_patch.py).
++  if (radius > 0) {
++    const SkScalar cut = SkFloatToScalar(radius);
++    canvas_->drawPath(NephBevel(RectFToSkRect(rect), cut, cut, cut, cut), flags);
++    return;
++  }
+   canvas_->drawRoundRect(RectFToSkRect(rect), SkFloatToScalar(radius),
+                          SkFloatToScalar(radius), flags);
+ }
+diff --git a/ui/views/background.cc b/ui/views/background.cc
+index c06bc6c337..2a5bded0d7 100644
+--- a/ui/views/background.cc
++++ b/ui/views/background.cc
+@@ -34,6 +34,48 @@
+ #include "skia/ext/skia_utils_win.h"
+ #endif
+ 
++// Neph (15.10.2026): every radius is a chamfer, as corner-shape:bevel in the
++// shell (ui/styles.css): Chrome's dialogs, bubbles and controls get the cut
++// corners of Neph's own menus (scripts/chromium-patches/dialogs_patch.py).
++#include <algorithm>
++
++#include "third_party/skia/include/core/SkPathBuilder.h"
++#include "third_party/skia/include/core/SkRRect.h"
++
++namespace {
++
++[[maybe_unused]] SkPath NephBevel(const SkRect& r,
++                                  SkScalar ul,
++                                  SkScalar ur,
++                                  SkScalar lr,
++                                  SkScalar ll) {
++  const SkScalar half = std::min(r.width(), r.height()) / 2;
++  ul = std::max<SkScalar>(0, std::min(ul, half));
++  ur = std::max<SkScalar>(0, std::min(ur, half));
++  lr = std::max<SkScalar>(0, std::min(lr, half));
++  ll = std::max<SkScalar>(0, std::min(ll, half));
++  SkPathBuilder path;
++  path.moveTo(r.fLeft + ul, r.fTop);
++  path.lineTo(r.fRight - ur, r.fTop);
++  path.lineTo(r.fRight, r.fTop + ur);
++  path.lineTo(r.fRight, r.fBottom - lr);
++  path.lineTo(r.fRight - lr, r.fBottom);
++  path.lineTo(r.fLeft + ll, r.fBottom);
++  path.lineTo(r.fLeft, r.fBottom - ll);
++  path.lineTo(r.fLeft, r.fTop + ul);
++  path.close();
++  return path.detach();
++}
++
++[[maybe_unused]] SkPath NephBevel(const SkRRect& rr) {
++  return NephBevel(rr.rect(), rr.radii(SkRRect::kUpperLeft_Corner).x(),
++                   rr.radii(SkRRect::kUpperRight_Corner).x(),
++                   rr.radii(SkRRect::kLowerRight_Corner).x(),
++                   rr.radii(SkRRect::kLowerLeft_Corner).x());
++}
++
++}  // namespace
++
+ namespace views {
+ 
+ DEFINE_SAFE_CAST_TARGET(Background)
+@@ -81,7 +123,7 @@ class RoundedRectBackground : public Background {
+                                {radii_.lower_right(), radii_.lower_right()},
+                                {radii_.lower_left(),  radii_.lower_left()}};
+     const SkPath path =
+-        SkPath::RRect(SkRRect::MakeRectRadii(gfx::RectToSkRect(rect), radii));
++        NephBevel(SkRRect::MakeRectRadii(gfx::RectToSkRect(rect), radii));
+ 
+     cc::PaintFlags flags;
+     flags.setAntiAlias(true);
+diff --git a/ui/views/bubble/bubble_border.cc b/ui/views/bubble/bubble_border.cc
+index 5bb35cf1f9..1a34024c86 100644
+--- a/ui/views/bubble/bubble_border.cc
++++ b/ui/views/bubble/bubble_border.cc
+@@ -39,6 +39,48 @@
+ #include "ui/views/widget/widget.h"
+ #include "ui/wm/core/shadow_controller.h"
+ 
++// Neph (15.10.2026): every radius is a chamfer, as corner-shape:bevel in the
++// shell (ui/styles.css): Chrome's dialogs, bubbles and controls get the cut
++// corners of Neph's own menus (scripts/chromium-patches/dialogs_patch.py).
++#include <algorithm>
++
++#include "third_party/skia/include/core/SkPathBuilder.h"
++#include "third_party/skia/include/core/SkRRect.h"
++
++namespace {
++
++[[maybe_unused]] SkPath NephBevel(const SkRect& r,
++                                  SkScalar ul,
++                                  SkScalar ur,
++                                  SkScalar lr,
++                                  SkScalar ll) {
++  const SkScalar half = std::min(r.width(), r.height()) / 2;
++  ul = std::max<SkScalar>(0, std::min(ul, half));
++  ur = std::max<SkScalar>(0, std::min(ur, half));
++  lr = std::max<SkScalar>(0, std::min(lr, half));
++  ll = std::max<SkScalar>(0, std::min(ll, half));
++  SkPathBuilder path;
++  path.moveTo(r.fLeft + ul, r.fTop);
++  path.lineTo(r.fRight - ur, r.fTop);
++  path.lineTo(r.fRight, r.fTop + ur);
++  path.lineTo(r.fRight, r.fBottom - lr);
++  path.lineTo(r.fRight - lr, r.fBottom);
++  path.lineTo(r.fLeft + ll, r.fBottom);
++  path.lineTo(r.fLeft, r.fBottom - ll);
++  path.lineTo(r.fLeft, r.fTop + ul);
++  path.close();
++  return path.detach();
++}
++
++[[maybe_unused]] SkPath NephBevel(const SkRRect& rr) {
++  return NephBevel(rr.rect(), rr.radii(SkRRect::kUpperLeft_Corner).x(),
++                   rr.radii(SkRRect::kUpperRight_Corner).x(),
++                   rr.radii(SkRRect::kLowerRight_Corner).x(),
++                   rr.radii(SkRRect::kLowerLeft_Corner).x());
++}
++
++}  // namespace
++
+ namespace views {
+ 
+ namespace {
+@@ -451,11 +493,17 @@ void BubbleBorder::Paint(const views::View& view, gfx::Canvas* canvas) {
+ 
+   gfx::ScopedCanvas scoped(canvas);
+   SkRRect r_rect = GetClientRect(view);
+-  canvas->sk_canvas()->clipRRect(r_rect, SkClipOp::kDifference,
+-                                 true /*doAntiAlias*/);
+-  DrawBorderAndShadowImpl(r_rect, &cc::PaintCanvas::drawRRect, canvas,
+-                          view.GetColorProvider(), ShouldDrawStroke(),
+-                          md_shadow_elevation_, shadow_);
++  // Neph: outline, stroke and shadow follow the chamfer (dialogs_patch.py).
++  canvas->sk_canvas()->clipPath(NephBevel(r_rect), SkClipOp::kDifference,
++                                true /*doAntiAlias*/);
++  if (ShouldDrawStroke()) {
++    const SkScalar one_pixel = SkFloatToScalar(1.0f / canvas->image_scale());
++    r_rect.outset(one_pixel, one_pixel);
++  }
++  canvas->sk_canvas()->drawPath(
++      NephBevel(r_rect),
++      GetBorderAndShadowFlags(view.GetColorProvider(), md_shadow_elevation_,
++                              shadow_));
+ 
+   if (visible_arrow_) {
+     PaintVisibleArrow(view, canvas);
+@@ -689,8 +737,8 @@ bool BubbleBorder::ShouldDrawStroke() const {
+ 
+ void BubbleBorder::PaintNoShadow(const View& view, gfx::Canvas* canvas) {
+   gfx::ScopedCanvas scoped(canvas);
+-  canvas->sk_canvas()->clipRRect(GetClientRect(view), SkClipOp::kDifference,
+-                                 true /*doAntiAlias*/);
++  canvas->sk_canvas()->clipPath(NephBevel(GetClientRect(view)),
++                                SkClipOp::kDifference, true /*doAntiAlias*/);
+   canvas->sk_canvas()->drawColor(SkColors::kTransparent, SkBlendMode::kSrc);
+ }
+ 
+@@ -747,8 +795,9 @@ void BubbleBackground::Paint(gfx::Canvas* canvas, views::View* view) const {
+   gfx::RectF bounds(view->GetLocalBounds());
+   bounds.Inset(gfx::InsetsF(border_->GetInsets()));
+ 
+-  canvas->sk_canvas()->drawRRect(
+-      SkRRect(gfx::RRectF(bounds, border_->rounded_corners())), flags);
++  canvas->sk_canvas()->drawPath(
++      NephBevel(SkRRect(gfx::RRectF(bounds, border_->rounded_corners()))),
++      flags);
+ }
+ 
+ }  // namespace views
+diff --git a/ui/views/bubble/bubble_frame_view.cc b/ui/views/bubble/bubble_frame_view.cc
+index 15bdfd3647..16ddec4d6d 100644
+--- a/ui/views/bubble/bubble_frame_view.cc
++++ b/ui/views/bubble/bubble_frame_view.cc
+@@ -63,6 +63,48 @@
+ #include "ui/ozone/public/ozone_platform.h"
+ #endif
+ 
++// Neph (15.10.2026): every radius is a chamfer, as corner-shape:bevel in the
++// shell (ui/styles.css): Chrome's dialogs, bubbles and controls get the cut
++// corners of Neph's own menus (scripts/chromium-patches/dialogs_patch.py).
++#include <algorithm>
++
++#include "third_party/skia/include/core/SkPathBuilder.h"
++#include "third_party/skia/include/core/SkRRect.h"
++
++namespace {
++
++[[maybe_unused]] SkPath NephBevel(const SkRect& r,
++                                  SkScalar ul,
++                                  SkScalar ur,
++                                  SkScalar lr,
++                                  SkScalar ll) {
++  const SkScalar half = std::min(r.width(), r.height()) / 2;
++  ul = std::max<SkScalar>(0, std::min(ul, half));
++  ur = std::max<SkScalar>(0, std::min(ur, half));
++  lr = std::max<SkScalar>(0, std::min(lr, half));
++  ll = std::max<SkScalar>(0, std::min(ll, half));
++  SkPathBuilder path;
++  path.moveTo(r.fLeft + ul, r.fTop);
++  path.lineTo(r.fRight - ur, r.fTop);
++  path.lineTo(r.fRight, r.fTop + ur);
++  path.lineTo(r.fRight, r.fBottom - lr);
++  path.lineTo(r.fRight - lr, r.fBottom);
++  path.lineTo(r.fLeft + ll, r.fBottom);
++  path.lineTo(r.fLeft, r.fBottom - ll);
++  path.lineTo(r.fLeft, r.fTop + ul);
++  path.close();
++  return path.detach();
++}
++
++[[maybe_unused]] SkPath NephBevel(const SkRRect& rr) {
++  return NephBevel(rr.rect(), rr.radii(SkRRect::kUpperLeft_Corner).x(),
++                   rr.radii(SkRRect::kUpperRight_Corner).x(),
++                   rr.radii(SkRRect::kLowerRight_Corner).x(),
++                   rr.radii(SkRRect::kLowerLeft_Corner).x());
++}
++
++}  // namespace
++
+ namespace views {
+ 
+ namespace {
+@@ -256,7 +298,7 @@ bool BubbleFrameView::GetClientMask(const gfx::Size& size, SkPath* path) const {
+       {corner_radii.upper_right(), corner_radii.upper_right()},
+       {corner_radii.lower_right(), corner_radii.lower_right()},
+       {corner_radii.lower_left(),  corner_radii.lower_left()}};
+-  *path = SkPath::RRect(SkRRect::MakeRectRadii(
++  *path = NephBevel(SkRRect::MakeRectRadii(
+       SkRect::MakeIWH(size.width(), size.height()), radii));
+   return true;
+ }
+@@ -341,7 +383,7 @@ void BubbleFrameView::GetWindowMask(const gfx::Size& size,
+                       {border_radii.upper_right(), border_radii.upper_right()},
+                       {border_radii.lower_right(), border_radii.lower_right()},
+                       {border_radii.lower_left(),  border_radii.lower_left()}};
+-    *window_mask = SkPath::RRect(SkRRect::MakeRectRadii(rect, radii));
++    *window_mask = NephBevel(SkRRect::MakeRectRadii(rect, radii));
+   } else {
+     static const int kBottomBorderShadowSize = 2;
+     rect.fBottom += SkIntToScalar(kBottomBorderShadowSize);
+diff --git a/ui/views/controls/highlight_path_generator.cc b/ui/views/controls/highlight_path_generator.cc
+index b805a1aa32..a82b9a2fd8 100644
+--- a/ui/views/controls/highlight_path_generator.cc
++++ b/ui/views/controls/highlight_path_generator.cc
+@@ -14,6 +14,48 @@
+ #include "ui/views/view.h"
+ #include "ui/views/view_class_properties.h"
+ 
++// Neph (15.10.2026): every radius is a chamfer, as corner-shape:bevel in the
++// shell (ui/styles.css): Chrome's dialogs, bubbles and controls get the cut
++// corners of Neph's own menus (scripts/chromium-patches/dialogs_patch.py).
++#include <algorithm>
++
++#include "third_party/skia/include/core/SkPathBuilder.h"
++#include "third_party/skia/include/core/SkRRect.h"
++
++namespace {
++
++[[maybe_unused]] SkPath NephBevel(const SkRect& r,
++                                  SkScalar ul,
++                                  SkScalar ur,
++                                  SkScalar lr,
++                                  SkScalar ll) {
++  const SkScalar half = std::min(r.width(), r.height()) / 2;
++  ul = std::max<SkScalar>(0, std::min(ul, half));
++  ur = std::max<SkScalar>(0, std::min(ur, half));
++  lr = std::max<SkScalar>(0, std::min(lr, half));
++  ll = std::max<SkScalar>(0, std::min(ll, half));
++  SkPathBuilder path;
++  path.moveTo(r.fLeft + ul, r.fTop);
++  path.lineTo(r.fRight - ur, r.fTop);
++  path.lineTo(r.fRight, r.fTop + ur);
++  path.lineTo(r.fRight, r.fBottom - lr);
++  path.lineTo(r.fRight - lr, r.fBottom);
++  path.lineTo(r.fLeft + ll, r.fBottom);
++  path.lineTo(r.fLeft, r.fBottom - ll);
++  path.lineTo(r.fLeft, r.fTop + ul);
++  path.close();
++  return path.detach();
++}
++
++[[maybe_unused]] SkPath NephBevel(const SkRRect& rr) {
++  return NephBevel(rr.rect(), rr.radii(SkRRect::kUpperLeft_Corner).x(),
++                   rr.radii(SkRRect::kUpperRight_Corner).x(),
++                   rr.radii(SkRRect::kLowerRight_Corner).x(),
++                   rr.radii(SkRRect::kLowerLeft_Corner).x());
++}
++
++}  // namespace
++
+ namespace views {
+ 
+ HighlightPathGenerator::HighlightPathGenerator()
+@@ -43,7 +85,7 @@ SkPath HighlightPathGenerator::GetHighlightPath(const View* view) {
+   // A rounded rectangle must be supplied if using this default implementation.
+   std::optional<gfx::RRectF> round_rect = GetRoundRect(view);
+   DCHECK(round_rect);
+-  return SkPath::RRect(SkRRect{*round_rect});
++  return NephBevel(SkRRect{*round_rect});  // Neph: a chamfered focus ring
+ }
+ 
+ std::optional<gfx::RRectF> HighlightPathGenerator::GetRoundRect(
+diff --git a/ui/views/layout/layout_provider.cc b/ui/views/layout/layout_provider.cc
+index d243aa3387..6f984b790d 100644
+--- a/ui/views/layout/layout_provider.cc
++++ b/ui/views/layout/layout_provider.cc
+@@ -193,11 +193,12 @@ int LayoutProvider::GetCornerRadiusMetric(Emphasis emphasis,
+   switch (emphasis) {
+     case Emphasis::kNone:
+       return 0;
++    // Neph: the shell's bevels, 3 px on controls, 6 px above (dialogs_patch.py).
+     case Emphasis::kLow:
+     case Emphasis::kMedium:
+-      return 4;
++      return 3;
+     case Emphasis::kHigh:
+-      return 8;
++      return 6;
+     case Emphasis::kMaximum:
+       return std::min(size.width(), size.height()) / 2;
+   }
+@@ -230,18 +231,21 @@ int LayoutProvider::GetCornerRadiusMetric(ShapeContextTokens id,
+   DCHECK_NE(token, ShapeSysTokens::kDefault)
+       << "kDefault token means there is a missing mapping between shape tokens";
+   switch (token) {
++    // Neph: the shell's four bevels (ui/styles.css --bev-1..4): fields and
++    // small controls 3 px, buttons 6 px instead of pills (the primary button),
++    // dialogs and menus 10 px, anything larger 14 px (dialogs_patch.py).
+     case ShapeSysTokens::kXSmall:
+-      return 4;
++      return 3;
+     case ShapeSysTokens::kSmall:
+-      return 8;
++      return 3;
+     case ShapeSysTokens::kMediumSmall:
+-      return 12;
++      return 10;
+     case ShapeSysTokens::kMedium:
+-      return 16;
++      return 14;
+     case ShapeSysTokens::kLarge:
+-      return 24;
++      return 14;
+     case ShapeSysTokens::kFull:
+-      return std::min(size.width(), size.height()) / 2;
++      return std::min({6, size.width() / 2, size.height() / 2});
+     default:
+       return 0;
+   }
+diff --git a/ui/views/painter.cc b/ui/views/painter.cc
+index 967adcc60b..9ef7e17406 100644
+--- a/ui/views/painter.cc
++++ b/ui/views/painter.cc
+@@ -23,6 +23,48 @@
+ #include "ui/gfx/scoped_canvas.h"
+ #include "ui/views/view.h"
+ 
++// Neph (15.10.2026): every radius is a chamfer, as corner-shape:bevel in the
++// shell (ui/styles.css): Chrome's dialogs, bubbles and controls get the cut
++// corners of Neph's own menus (scripts/chromium-patches/dialogs_patch.py).
++#include <algorithm>
++
++#include "third_party/skia/include/core/SkPathBuilder.h"
++#include "third_party/skia/include/core/SkRRect.h"
++
++namespace {
++
++[[maybe_unused]] SkPath NephBevel(const SkRect& r,
++                                  SkScalar ul,
++                                  SkScalar ur,
++                                  SkScalar lr,
++                                  SkScalar ll) {
++  const SkScalar half = std::min(r.width(), r.height()) / 2;
++  ul = std::max<SkScalar>(0, std::min(ul, half));
++  ur = std::max<SkScalar>(0, std::min(ur, half));
++  lr = std::max<SkScalar>(0, std::min(lr, half));
++  ll = std::max<SkScalar>(0, std::min(ll, half));
++  SkPathBuilder path;
++  path.moveTo(r.fLeft + ul, r.fTop);
++  path.lineTo(r.fRight - ur, r.fTop);
++  path.lineTo(r.fRight, r.fTop + ur);
++  path.lineTo(r.fRight, r.fBottom - lr);
++  path.lineTo(r.fRight - lr, r.fBottom);
++  path.lineTo(r.fLeft + ll, r.fBottom);
++  path.lineTo(r.fLeft, r.fBottom - ll);
++  path.lineTo(r.fLeft, r.fTop + ul);
++  path.close();
++  return path.detach();
++}
++
++[[maybe_unused]] SkPath NephBevel(const SkRRect& rr) {
++  return NephBevel(rr.rect(), rr.radii(SkRRect::kUpperLeft_Corner).x(),
++                   rr.radii(SkRRect::kUpperRight_Corner).x(),
++                   rr.radii(SkRRect::kLowerRight_Corner).x(),
++                   rr.radii(SkRRect::kLowerLeft_Corner).x());
++}
++
++}  // namespace
++
+ namespace views {
+ 
+ namespace {
+@@ -103,7 +145,7 @@ void SolidRoundRectPainter::Paint(gfx::Canvas* canvas, const gfx::Size& size) {
+        {radii_.lower_right() * scale, radii_.lower_right() * scale},
+        {radii_.lower_left() * scale, radii_.lower_left() * scale}}};
+ 
+-  const SkPath fill_path = SkPath::RRect(SkRRect::MakeRectRadii(
++  const SkPath fill_path = NephBevel(SkRRect::MakeRectRadii(
+       gfx::RectFToSkRect(fill_rect), scaled_radii.data()));
+   canvas->DrawPath(fill_path, flags);
+ 
+@@ -121,7 +163,7 @@ void SolidRoundRectPainter::Paint(gfx::Canvas* canvas, const gfx::Size& size) {
+           scaled_radii[i] - SkVector{stroke_width / 2, stroke_width / 2};
+     }
+ 
+-    const SkPath stroke_path = SkPath::RRect(SkRRect::MakeRectRadii(
++    const SkPath stroke_path = NephBevel(SkRRect::MakeRectRadii(
+         gfx::RectFToSkRect(stroke_rect), stroke_radii.data()));
+     canvas->DrawPath(stroke_path, flags);
+   }

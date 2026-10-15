@@ -46,6 +46,12 @@ beim Schließen eines Tabs nicht mehr abgebrochen. Details stehen im Kopf von `p
 Nicht enthalten: Nephs eigener Quelltext (Host, Oberfläche, Himmel, Setup, Updater). Er linkt nur dynamisch gegen
 `libcef.dll` (BSD-3-Clause) und ist kein abgeleitetes Werk der LGPL-Bestandteile.
 
+## macOS
+
+Seit Neph 0.4.6 gibt es Neph auch für macOS (Apple Silicon). Den Chromium-Anteil der Mac-Fassung beschreibt der
+Ordner [`mac/`](mac/README.md): genaue Stände, Nephs Änderungen, GN-Argumente und Bauablauf des Mac-Kerns. Die
+Windows-Fassung von 0.4.6 liefert dieselbe `libcef.dll` wie 0.4.3 aus (Tag `neph-v0.4.3`).
+
 ## Frühere Versionen
 
 Zu den meisten Neph-Versionen gibt es hier einen Tag `neph-v<Version>`. Versionen ohne eigenen Tag bauen den
