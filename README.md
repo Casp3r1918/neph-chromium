@@ -12,15 +12,15 @@ verwenden möchte, erhält die Dateien vom Herausgeber auf Anfrage als Archiv.
 every modification Neph applies, and the build instructions. Valid for at least three years after each release;
 available as an archive on request.*
 
-## Aktuelle Version: Neph 0.4.3 (2026-10-10)
+## Aktuelle Version: Neph 0.4.8 (2026-10-20)
 
 | Bestandteil | Stand | Quelle |
 |---|---|---|
-| Chromium | `152.0.7977.158` (Commit `900724803344`) | https://chromium.googlesource.com/chromium/src/+/refs/tags/152.0.7977.158 |
-| CEF | `152.0.13+g841e03d+chromium-152.0.7977.158` (Branch 7977, Commit `841e03d`) | https://github.com/chromiumembedded/cef/commit/841e03d |
+| Chromium | `152.0.7977.167` (Commit `dd78960ccd8a`) | https://chromium.googlesource.com/chromium/src/+/refs/tags/152.0.7977.167 |
+| CEF | `152.0.14+g8a0b5b9+chromium-152.0.7977.167` (Branch 7977, Commit `8a0b5b9`) | https://github.com/chromiumembedded/cef/commit/8a0b5b9 |
 | ffmpeg (`third_party/ffmpeg`) | `2b68d2babae7` | https://chromium.googlesource.com/chromium/third_party/ffmpeg/+/2b68d2babae73714846961fb0ee47e3b3d2e39a9 |
 | ANGLE (`third_party/angle`) | `4f2e7d39252e` | https://chromium.googlesource.com/angle/angle/+/4f2e7d39252ed0e8387ebee1b222d4715f2dea7d |
-| Nephs Änderungen | `patches/` | dieses Repository, Tag `neph-v0.4.3` |
+| Nephs Änderungen | `patches/` | dieses Repository, Tag `neph-v0.4.8` |
 | GN-Argumente | `build/GN_DEFINES.txt`, `build/args.gn` | dieses Repository |
 
 Alle weiteren Abhängigkeiten (DEPS) ergeben sich aus dem Chromium-Tag; `gclient sync` stellt sie exakt wieder her.
@@ -45,12 +45,6 @@ beim Schließen eines Tabs nicht mehr abgebrochen. Details stehen im Kopf von `p
 
 Nicht enthalten: Nephs eigener Quelltext (Host, Oberfläche, Himmel, Setup, Updater). Er linkt nur dynamisch gegen
 `libcef.dll` (BSD-3-Clause) und ist kein abgeleitetes Werk der LGPL-Bestandteile.
-
-## macOS
-
-Seit Neph 0.4.6 gibt es Neph auch für macOS (Apple Silicon). Den Chromium-Anteil der Mac-Fassung beschreibt der
-Ordner [`mac/`](mac/README.md): genaue Stände, Nephs Änderungen, GN-Argumente und Bauablauf des Mac-Kerns. Die
-Windows-Fassung von 0.4.6 liefert dieselbe `libcef.dll` wie 0.4.3 aus (Tag `neph-v0.4.3`).
 
 ## Frühere Versionen
 

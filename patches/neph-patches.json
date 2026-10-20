@@ -1,6 +1,6 @@
 {
  "src": "C:\\cefbuild\\chromium_git\\chromium\\src",
- "when": "2026-10-09 04:00:48",
+ "when": "2026-10-20 08:43:25",
  "product": "Neph",
  "lenient": true,
  "patches": {
@@ -11,7 +11,10 @@
   "mrt_layout": "in place",
   "zoom_steps": "in place",
   "page_base": "in place",
+  "list_accounts": "in place",
   "downloads": "in place",
+  "dialogs": "in place",
+  "platform_codecs": "in place",
   "widevine": "in place",
   "vault": "in place",
   "chrome/app/chromium_strings.grd": {

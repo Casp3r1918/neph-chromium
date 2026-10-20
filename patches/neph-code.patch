@@ -59,6 +59,175 @@ index c0822519d6986..bd7babd424f50 100644
    std::vector<Profile*> profiles(
        g_browser_process->profile_manager()->GetLoadedProfiles());
    for (auto it = profiles.begin(); it < profiles.end(); ++it) {
+diff --git a/chrome/browser/ui/color/chrome_color_mixers.cc b/chrome/browser/ui/color/chrome_color_mixers.cc
+index 9698e807b11df..0c675dc796a82 100644
+--- a/chrome/browser/ui/color/chrome_color_mixers.cc
++++ b/chrome/browser/ui/color/chrome_color_mixers.cc
+@@ -24,6 +24,18 @@
+ #include "chrome/browser/ui/color/tab_strip_color_mixer.h"
+ #include "ui/color/color_provider_utils.h"
+ 
++#include <algorithm>
++#include <cmath>
++
++#include "third_party/skia/include/core/SkColor.h"
++#include "ui/color/color_id.h"
++#include "ui/color/color_mixer.h"
++#include "ui/color/color_provider.h"
++#include "ui/color/color_provider_key.h"
++#include "ui/color/color_recipe.h"
++#include "ui/color/color_transform.h"
++#include "ui/gfx/color_utils.h"
++
+ namespace {
+ 
+ class ChromeColorProviderUtilsCallbacks
+@@ -53,6 +65,137 @@ bool ChromeColorProviderUtilsCallbacks::ColorIdName(
+ 
+ }  // namespace
+ 
++namespace {
++
++// Neph (15.10.2026): Chrome's own dialogs, bubbles and menus in the colours of
++// the shell (ui/styles.css, dialogs_patch.py): neutral grey surfaces, ink for
++// text, the accent - the shell's, sent as the user colour - for the prominent
++// button, the focus ring and links. The accent's text and on-colour variants
++// are derived in OKLCH, as the shell derives them.
++struct NephLch {
++  float l, c, h;
++};
++
++float NephLinear(float v) {
++  return v <= 0.04045f ? v / 12.92f : std::pow((v + 0.055f) / 1.055f, 2.4f);
++}
++
++float NephEncode(float v) {
++  v = std::clamp(v, 0.0f, 1.0f);
++  return v <= 0.0031308f ? v * 12.92f : 1.055f * std::pow(v, 1 / 2.4f) - 0.055f;
++}
++
++NephLch NephToLch(SkColor color) {
++  const float r = NephLinear(SkColorGetR(color) / 255.0f);
++  const float g = NephLinear(SkColorGetG(color) / 255.0f);
++  const float b = NephLinear(SkColorGetB(color) / 255.0f);
++  const float l = std::cbrt(0.4122214708f * r + 0.5363325363f * g + 0.0514459929f * b);
++  const float m = std::cbrt(0.2119034982f * r + 0.6806995451f * g + 0.1073969566f * b);
++  const float s = std::cbrt(0.0883024619f * r + 0.2817188376f * g + 0.6299787005f * b);
++  const float lightness = 0.2104542553f * l + 0.7936177850f * m - 0.0040720468f * s;
++  const float a = 1.9779984951f * l - 2.4285922050f * m + 0.4505937099f * s;
++  const float bb = 0.0259040371f * l + 0.7827717662f * m - 0.8086757660f * s;
++  return {lightness, std::hypot(a, bb), std::atan2(bb, a)};
++}
++
++SkColor NephFromLch(float lightness, float chroma, float hue) {
++  const float a = chroma * std::cos(hue);
++  const float b = chroma * std::sin(hue);
++  const float l = std::pow(lightness + 0.3963377774f * a + 0.2158037573f * b, 3.0f);
++  const float m = std::pow(lightness - 0.1055613458f * a - 0.0638541728f * b, 3.0f);
++  const float s = std::pow(lightness - 0.0894841775f * a - 1.2914855480f * b, 3.0f);
++  const float r = 4.0767416621f * l - 3.3077115913f * m + 0.2309699292f * s;
++  const float g = -1.2684380046f * l + 2.6097574011f * m - 0.3413193965f * s;
++  const float bl = -0.0041960863f * l - 0.7034186147f * m + 1.7076147010f * s;
++  return SkColorSetRGB(static_cast<U8CPU>(std::lround(NephEncode(r) * 255)),
++                       static_cast<U8CPU>(std::lround(NephEncode(g) * 255)),
++                       static_cast<U8CPU>(std::lround(NephEncode(bl) * 255)));
++}
++
++void AddNephColorMixer(ui::ColorProvider* provider,
++                       const ui::ColorProviderKey& key) {
++  const bool dark = key.color_mode == ui::ColorProviderKey::ColorMode::kDark;
++  // The shell's tokens, oklch converted to sRGB (dark / light).
++  const SkColor surface = dark ? SkColorSetRGB(0x0e, 0x0f, 0x11) : SkColorSetRGB(0xde, 0xdf, 0xe0);  // --s-2
++  const SkColor sunk = dark ? SkColorSetRGB(0x00, 0x00, 0x01) : SkColorSetRGB(0xb4, 0xb6, 0xb8);     // --s-sunk
++  const SkColor ink1 = dark ? SkColorSetRGB(0xf3, 0xf4, 0xf6) : SkColorSetRGB(0x14, 0x16, 0x19);
++  const SkColor ink2 = dark ? SkColorSetRGB(0xbf, 0xc0, 0xc2) : SkColorSetRGB(0x37, 0x39, 0x3c);
++  const SkColor ink3 = dark ? SkColorSetRGB(0x94, 0x96, 0x98) : SkColorSetRGB(0x45, 0x46, 0x49);
++  const SkColor ink4 = dark ? SkColorSetRGB(0x67, 0x69, 0x6b) : SkColorSetRGB(0x7a, 0x7c, 0x7f);
++  const SkColor edge_ctl = dark ? SkColorSetRGB(0x73, 0x75, 0x77) : SkColorSetRGB(0x59, 0x5b, 0x5d);
++  const SkColor error = dark ? SkColorSetRGB(0xed, 0x75, 0x6e) : SkColorSetRGB(0x91, 0x07, 0x0f);
++  // --edge-2: ink at 16 % (dark) or 22 % (light) over the surface.
++  const SkColor edge2 = color_utils::AlphaBlend(ink1, surface, dark ? 0.16f : 0.22f);
++  // --state-hover: the surface mixed with ink.
++  const SkColor hover = color_utils::AlphaBlend(ink1, surface, dark ? 0.16f : 0.14f);
++  const NephLch accent_lch = NephToLch(
++      key.user_color.value_or(dark ? SkColorSetRGB(0xa9, 0xc1, 0xd9) : SkColorSetRGB(0x3f, 0x66, 0x86)));
++  const SkColor accent = NephFromLch(dark ? 0.780f : 0.500f, accent_lch.c, accent_lch.h);
++  const SkColor accent_text = NephFromLch(dark ? 0.840f : 0.420f, accent_lch.c, accent_lch.h);
++  const SkColor accent_on = NephFromLch(dark ? 0.185f : 0.985f, dark ? 0.020f : 0.010f, accent_lch.h);
++
++  ui::ColorMixer& mixer = provider->AddMixer();
++  // Surfaces: the flyout's --s-2, its border --edge-2.
++  for (ui::ColorId id : {ui::kColorBubbleBackground, ui::kColorDialogBackground,
++                         ui::kColorBubbleFooterBackground, ui::kColorMenuBackground,
++                         ui::kColorSysSurface, ui::kColorSysSurface1, ui::kColorSysSurface2,
++                         ui::kColorSysSurface3, ui::kColorSysSurface4, ui::kColorSysSurface5}) {
++    mixer[id] = {surface};
++  }
++  for (ui::ColorId id : {ui::kColorBubbleBorder, ui::kColorBubbleFooterBorder, ui::kColorSeparator,
++                         ui::kColorMenuSeparator, ui::kColorMenuBorder, ui::kColorSysDivider}) {
++    mixer[id] = {edge2};
++  }
++  // Text and icons.
++  for (ui::ColorId id : {ui::kColorDialogForeground, ui::kColorLabelForeground,
++                         ui::kColorMenuItemForeground, ui::kColorSysOnSurface,
++                         ui::kColorButtonForeground, ui::kColorButtonForegroundTonal,
++                         ui::kColorSysOnTonalContainer, ui::kColorTextfieldForeground}) {
++    mixer[id] = {ink1};
++  }
++  for (ui::ColorId id : {ui::kColorLabelForegroundSecondary, ui::kColorSysOnSurfaceSecondary, ui::kColorIcon}) {
++    mixer[id] = {ink2};
++  }
++  for (ui::ColorId id : {ui::kColorSysOnSurfaceSubtle, ui::kColorIconSecondary,
++                         ui::kColorTextfieldForegroundPlaceholder}) {
++    mixer[id] = {ink3};
++  }
++  for (ui::ColorId id : {ui::kColorLabelForegroundDisabled, ui::kColorButtonForegroundDisabled}) {
++    mixer[id] = {ink4};
++  }
++  // Buttons: the prominent one in the accent (.primary-button), the others
++  // sunk with a control edge (.chip), as the shell's dialogs have them.
++  for (ui::ColorId id : {ui::kColorButtonBackgroundProminent, ui::kColorButtonBackgroundProminentFocused,
++                         ui::kColorSysPrimary}) {
++    mixer[id] = {accent};
++  }
++  mixer[ui::kColorButtonBackgroundProminentDisabled] = {SkColorSetA(accent, 0x5c)};
++  for (ui::ColorId id : {ui::kColorButtonForegroundProminent, ui::kColorSysOnPrimary}) {
++    mixer[id] = {accent_on};
++  }
++  for (ui::ColorId id : {ui::kColorButtonBackground, ui::kColorButtonBackgroundTonal,
++                         ui::kColorButtonBackgroundTonalFocused, ui::kColorSysTonalContainer,
++                         ui::kColorTextfieldBackground}) {
++    mixer[id] = {sunk};
++  }
++  mixer[ui::kColorButtonBackgroundTonalDisabled] = {SkColorSetA(sunk, 0x5c)};
++  for (ui::ColorId id : {ui::kColorButtonBorder, ui::kColorTextfieldOutline, ui::kColorSysNeutralOutline,
++                         ui::kColorSysTonalOutline}) {
++    mixer[id] = {edge_ctl};
++  }
++  mixer[ui::kColorButtonBorderDisabled] = {SkColorSetA(edge_ctl, 0x5c)};
++  mixer[ui::kColorTextfieldSelectionBackground] = {color_utils::AlphaBlend(accent, surface, 0.35f)};
++  mixer[ui::kColorMenuItemBackgroundSelected] = {hover};
++  // The one hue: focus, links.
++  for (ui::ColorId id : {ui::kColorFocusableBorderFocused, ui::kColorSysStateFocusRing,
++                         ui::kColorLinkForeground, ui::kColorLinkForegroundPressed}) {
++    mixer[id] = {accent_text};
++  }
++  mixer[ui::kColorTextfieldOutlineInvalid] = {error};
++}
++
++}  // namespace
++
+ void AddChromeColorMixers(ui::ColorProvider* provider,
+                           const ui::ColorProviderKey& key) {
+   static base::NoDestructor<ChromeColorProviderUtilsCallbacks>
+@@ -81,4 +224,7 @@ void AddChromeColorMixers(ui::ColorProvider* provider,
+   if (key.app_controller) {
+     key.app_controller->AddColorMixers(provider, key);
+   }
++
++  // Neph: last, so Neph's colours win (dialogs_patch.py).
++  AddNephColorMixer(provider, key);
+ }
 diff --git a/chrome/browser/ui/views/frame/contents_web_view.cc b/chrome/browser/ui/views/frame/contents_web_view.cc
 index c49d4c8b7e721..4723e8748191b 100644
 --- a/chrome/browser/ui/views/frame/contents_web_view.cc
@@ -76,11 +245,71 @@ index c49d4c8b7e721..4723e8748191b 100644
      }
    }
  }
+diff --git a/chrome/browser/ui/views/passwords/password_bubble_view_base.cc b/chrome/browser/ui/views/passwords/password_bubble_view_base.cc
+index fd0e31f53323b..2973691832cbb 100644
+--- a/chrome/browser/ui/views/passwords/password_bubble_view_base.cc
++++ b/chrome/browser/ui/views/passwords/password_bubble_view_base.cc
+@@ -36,6 +36,8 @@
+ #include "components/tabs/public/tab_interface.h"
+ #include "ui/base/metadata/metadata_impl_macros.h"
+ 
++#include "base/command_line.h"  // Neph (dialogs_patch.py)
++
+ #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+ #include "chrome/browser/ui/views/passwords/password_relaunch_chrome_view.h"
+ #endif
+@@ -259,6 +261,10 @@ PasswordBubbleViewBase::~PasswordBubbleViewBase() {
+ 
+ void PasswordBubbleViewBase::SetBubbleHeader(int light_image_id,
+                                              int dark_image_id) {
++  // Neph: no illustration, as Neph's menus have none (dialogs_patch.py).
++  if (!base::CommandLine::ForCurrentProcess()->HasSwitch("neph-illustrations")) {
++    return;
++  }
+   ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
+   auto image_view = std::make_unique<ThemeTrackingNonAccessibleImageView>(
+       *bundle.GetImageSkiaNamed(light_image_id),
+@@ -279,6 +285,10 @@ void PasswordBubbleViewBase::SetBubbleHeader(int light_image_id,
+ }
+ 
+ void PasswordBubbleViewBase::SetBubbleHeaderLottie(int lottie_image_id) {
++  // Neph: no illustration, as Neph's menus have none (dialogs_patch.py).
++  if (!base::CommandLine::ForCurrentProcess()->HasSwitch("neph-illustrations")) {
++    return;
++  }
+   ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
+   auto image_view = std::make_unique<views::ImageView>(
+       bundle.GetThemedLottieImageNamed(lottie_image_id));
+diff --git a/chrome/browser/ui/views/webauthn/authenticator_request_sheet_view.cc b/chrome/browser/ui/views/webauthn/authenticator_request_sheet_view.cc
+index a462df6164efc..04d4602364cdc 100644
+--- a/chrome/browser/ui/views/webauthn/authenticator_request_sheet_view.cc
++++ b/chrome/browser/ui/views/webauthn/authenticator_request_sheet_view.cc
+@@ -43,6 +43,9 @@
+ #include "ui/views/layout/layout_provider.h"
+ #include "ui/views/style/typography.h"
+ #include "ui/views/view_class_properties.h"
++
++#include "base/command_line.h"  // Neph (dialogs_patch.py)
++
+ namespace {
+ 
+ // Margins around any illustration.
+@@ -132,6 +135,10 @@ int AuthenticatorRequestSheetView::GetSpacingBetweenTitleAndDescription() {
+ 
+ std::unique_ptr<views::View>
+ AuthenticatorRequestSheetView::CreateIllustrationWithOverlays() {
++  // Neph: no illustration, as Neph's menus have none (dialogs_patch.py).
++  if (!base::CommandLine::ForCurrentProcess()->HasSwitch("neph-illustrations")) {
++    return std::make_unique<views::View>();
++  }
+   constexpr int kImageHeight = 112;
+   constexpr int kHeaderHeight =
+       kImageHeight + kImageMarginTop + kImageMarginBottom;
 diff --git a/components/password_manager/core/browser/password_store/login_database.cc b/components/password_manager/core/browser/password_store/login_database.cc
-index f650628393a4e..2df618596360d 100644
+index f650628393a4e..0a8740bccad70 100644
 --- a/components/password_manager/core/browser/password_store/login_database.cc
 +++ b/components/password_manager/core/browser/password_store/login_database.cc
-@@ -59,6 +59,15 @@
+@@ -59,6 +59,22 @@
  #include "sql/sqlite_result_code_values.h"
  #include "sql/statement.h"
  #include "sql/transaction.h"
@@ -89,6 +318,13 @@ index f650628393a4e..2df618596360d 100644
 +#include <atomic>
 +#include <vector>
 +
++// The exports the host reaches (GetProcAddress on Windows, dlsym on the Mac).
++#if defined(_WIN32)
++#define NEPH_VAULT_EXPORT __declspec(dllexport)
++#else
++#define NEPH_VAULT_EXPORT __attribute__((visibility("default")))
++#endif
++
 +#include "base/memory/ref_counted.h"
 +#include "base/no_destructor.h"
 +#include "base/synchronization/lock.h"
@@ -96,7 +332,7 @@ index f650628393a4e..2df618596360d 100644
  #include "third_party/abseil-cpp/absl/cleanup/cleanup.h"
  #include "third_party/re2/src/re2/re2.h"
  #include "url/origin.h"
-@@ -1063,6 +1072,84 @@ bool ShouldDeleteUndecryptablePasswords(
+@@ -1063,6 +1079,84 @@ bool ShouldDeleteUndecryptablePasswords(
  
  }  // namespace
  
@@ -181,7 +417,7 @@ index f650628393a4e..2df618596360d 100644
  struct LoginDatabase::PrimaryKeyAndPassword {
    int primary_key;
    std::u16string decrypted_password;
-@@ -1079,12 +1166,15 @@ LoginDatabase::LoginDatabase(const base::FilePath& db_path,
+@@ -1079,12 +1173,15 @@ LoginDatabase::LoginDatabase(const base::FilePath& db_path,
            /*tag=*/"Passwords"),
        is_deleting_undecryptable_logins_enabled_by_policy_(can_delete) {}
  
@@ -198,7 +434,7 @@ index f650628393a4e..2df618596360d 100644
    on_undecryptable_passwords_removed_ =
        std::move(on_undecryptable_passwords_removed);
    encryptor_ = std::move(encryptor);
-@@ -1308,6 +1398,7 @@ void LoginDatabase::ReportMetrics() {
+@@ -1308,6 +1405,7 @@ void LoginDatabase::ReportMetrics() {
  PasswordStoreChangeList LoginDatabase::AddLogin(StoredCredential cred,
                                                  AddCredentialError* error) {
    TRACE_EVENT0("passwords", "LoginDatabase::AddLogin");
@@ -206,7 +442,7 @@ index f650628393a4e..2df618596360d 100644
    if (error) {
      *error = AddCredentialError::kNone;
    }
-@@ -1416,6 +1507,7 @@ PasswordStoreChangeList LoginDatabase::UpdateLogin(
+@@ -1416,6 +1514,7 @@ PasswordStoreChangeList LoginDatabase::UpdateLogin(
      const StoredCredential& cred,
      UpdateCredentialError* error) {
    TRACE_EVENT0("passwords", "LoginDatabase::UpdateLogin");
@@ -214,7 +450,7 @@ index f650628393a4e..2df618596360d 100644
    if (error) {
      *error = UpdateCredentialError::kNone;
    }
-@@ -1745,6 +1837,7 @@ bool LoginDatabase::GetLogins(const PasswordFormDigest& form,
+@@ -1745,6 +1844,7 @@ bool LoginDatabase::GetLogins(const PasswordFormDigest& form,
                                bool should_PSL_matching_apply,
                                std::vector<StoredCredential>* credentials) {
    TRACE_EVENT0("passwords", "LoginDatabase::GetLogins");
@@ -222,7 +458,7 @@ index f650628393a4e..2df618596360d 100644
    CHECK(credentials);
    credentials->clear();
  
-@@ -1898,7 +1991,9 @@ DatabaseCleanupResult LoginDatabase::DeleteUndecryptableLogins() {
+@@ -1898,7 +1998,9 @@ DatabaseCleanupResult LoginDatabase::DeleteUndecryptableLogins() {
    TRACE_EVENT0("passwords", "LoginDatabase::DeleteUndecryptableLogins");
    // If the Keychain in MacOS or the real secret key in Linux is unavailable,
    // don't delete any logins.
@@ -233,7 +469,7 @@ index f650628393a4e..2df618596360d 100644
      metrics_util::LogDeleteUndecryptableLoginsReturnValue(
          metrics_util::DeleteCorruptedPasswordsResult::kEncryptionUnavailable);
      return DatabaseCleanupResult::kEncryptionUnavailable;
-@@ -2372,4 +2467,209 @@ bool LoginDatabase::UpdatePasswordNotes(
+@@ -2372,4 +2474,209 @@ bool LoginDatabase::UpdatePasswordNotes(
    return true;
  }
  
@@ -432,13 +668,13 @@ index f650628393a4e..2df618596360d 100644
 +
  }  // namespace password_manager
 +
-+extern "C" __declspec(dllexport) void neph_vault_migrate(
++extern "C" NEPH_VAULT_EXPORT void neph_vault_migrate(
 +    void (*done)(void*, int, int, int),
 +    void* context) {
 +  password_manager::NephStartMaintenance(false, done, context);
 +}
 +
-+extern "C" __declspec(dllexport) void neph_vault_wipe(
++extern "C" NEPH_VAULT_EXPORT void neph_vault_wipe(
 +    void (*done)(void*, int, int, int),
 +    void* context) {
 +  password_manager::NephStartMaintenance(true, done, context);
@@ -460,6 +696,173 @@ index 4dd8d3fc61bba..385c1b8fd1851 100644
    // Callers that requires transaction support should call these methods to
    // begin, rollback and commit transactions. They delegate to the transaction
    // support of the underlying database. Only one transaction may exist at a
+diff --git a/components/password_manager/core/browser/password_store/login_database_mac.cc b/components/password_manager/core/browser/password_store/login_database_mac.cc
+index acf01bdd66a3b..7ccc9d6d8af81 100644
+--- a/components/password_manager/core/browser/password_store/login_database_mac.cc
++++ b/components/password_manager/core/browser/password_store/login_database_mac.cc
+@@ -2,26 +2,156 @@
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
+ 
++// Neph vault: password blobs are encrypted by the host's vault (a master
++// password plus a TPM-sealed device secret) instead of the OS key. The host
++// registers its hooks through neph_vault_set_hooks, exported by the framework, before
++// Chromium starts. With no hooks nothing is encrypted and nothing is
++// decrypted, so no password can be written under the OS key by accident.
++// scripts/chromium-patches/vault_patch.py owns this file; src/native/vault_hooks.h
++// holds the same ABI on the host side.
++
+ #include "components/password_manager/core/browser/password_store/login_database.h"
+ 
++#include <string.h>
++
++#include <atomic>
++#include <cstddef>
++#include <cstdint>
++#include <string>
++#include <string_view>
++#include <vector>
++
++#include "base/strings/string_util.h"
++#include "base/strings/utf_string_conversions.h"
+ #include "components/os_crypt/async/common/encryptor.h"
+ 
++extern "C" {
++struct NephVaultHooks {
++  uint32_t size;
++  uint32_t version;
++  // 0 ok, otherwise a status of the host's vault; |out_size| is the size
++  // written or needed. Buffers belong to the caller.
++  int (*encrypt)(const uint8_t* plain, size_t plain_size, uint8_t* out,
++                 size_t capacity, size_t* out_size, int purpose);
++  int (*decrypt)(const uint8_t* blob, size_t blob_size, uint8_t* out,
++                 size_t capacity, size_t* out_size, int purpose);
++  // 1 while blobs in Chromium's old format may still be read.
++  int (*legacy_allowed)(void);
++};
++}  // extern "C"
++
+ namespace password_manager {
+ 
++// Defined in login_database.cc: why the store is calling.
++int NephVaultPurpose();
++
++namespace {
++
++constexpr int kNephStatusNotVaultBlob = 3;
++constexpr int kNephStatusBufferTooSmall = 5;
++
++std::atomic<const NephVaultHooks*> g_neph_hooks{nullptr};
++
++void NephWipe(std::string& text) {
++  if (!text.empty()) {
++    volatile char* p = text.data();
++    for (size_t i = 0; i < text.size(); ++i) p[i] = 0;
++  }
++}
++
++void NephWipe(std::vector<uint8_t>& bytes) {
++  if (!bytes.empty()) {
++    volatile uint8_t* p = bytes.data();
++    for (size_t i = 0; i < bytes.size(); ++i) p[i] = 0;
++  }
++}
++
++}  // namespace
++
++extern "C" __attribute__((visibility("default"))) void neph_vault_set_hooks(
++    const NephVaultHooks* hooks) {
++  g_neph_hooks.store(hooks && hooks->version == 1 &&
++                             hooks->size >= sizeof(NephVaultHooks)
++                         ? hooks
++                         : nullptr);
++}
++
+ EncryptionResult LoginDatabase::EncryptedString(
+     const std::u16string& plain_text,
+     std::string* cipher_text) const {
+-  return encryptor_ && encryptor_->EncryptString16(plain_text, cipher_text)
+-             ? EncryptionResult::kSuccess
+-             : EncryptionResult::kServiceFailure;
++  // An empty password (a "never save" entry, a federated login) holds no
++  // secret: it is stored empty, and DecryptedString reads it back as empty.
++  if (plain_text.empty()) {
++    cipher_text->clear();
++    return EncryptionResult::kSuccess;
++  }
++  const NephVaultHooks* hooks = g_neph_hooks.load();
++  if (!hooks) {
++    return EncryptionResult::kServiceFailure;
++  }
++  std::string plain = base::UTF16ToUTF8(plain_text);
++  std::vector<uint8_t> out(plain.size() + 64);
++  size_t out_size = 0;
++  int status = hooks->encrypt(reinterpret_cast<const uint8_t*>(plain.data()),
++                              plain.size(), out.data(), out.size(), &out_size,
++                              NephVaultPurpose());
++  if (status == kNephStatusBufferTooSmall && out_size > out.size()) {
++    out.assign(out_size, 0);
++    status = hooks->encrypt(reinterpret_cast<const uint8_t*>(plain.data()),
++                            plain.size(), out.data(), out.size(), &out_size,
++                            NephVaultPurpose());
++  }
++  NephWipe(plain);
++  if (status != 0 || out_size > out.size()) {
++    NephWipe(out);
++    return EncryptionResult::kServiceFailure;
++  }
++  cipher_text->assign(reinterpret_cast<const char*>(out.data()), out_size);
++  NephWipe(out);
++  return EncryptionResult::kSuccess;
+ }
+ 
+ EncryptionResult LoginDatabase::DecryptedString(
+     const std::string& cipher_text,
+     std::u16string* plain_text) const {
+-  return encryptor_ && encryptor_->DecryptString16(cipher_text, plain_text)
+-             ? EncryptionResult::kSuccess
+-             : EncryptionResult::kServiceFailure;
++  // Unittests need to read sample database entries. If these entries had real
++  // passwords, their encoding would need to be different for every platform.
++  // To avoid the need for that, the entries have empty passwords.
++  // os_crypt_async does not recognise the empty string as a valid
++  // encrypted string. Changing that for all clients of os_crypt_async could
++  // have too broad an impact, therefore to allow platform-independent data
++  // files for LoginDatabase tests, the special handling of the empty string
++  // is added below instead.
++  // See also https://codereview.chromium.org/2291123008/#msg14 for a
++  // discussion.
++  if (cipher_text.empty()) {
++    plain_text->clear();
++    return EncryptionResult::kSuccess;
++  }
++  const NephVaultHooks* hooks = g_neph_hooks.load();
++  if (!hooks) {
++    return EncryptionResult::kServiceFailure;
++  }
++  std::vector<uint8_t> out(cipher_text.size());
++  size_t out_size = 0;
++  const int status = hooks->decrypt(
++      reinterpret_cast<const uint8_t*>(cipher_text.data()), cipher_text.size(),
++      out.data(), out.size(), &out_size, NephVaultPurpose());
++  if (status == 0 && out_size <= out.size()) {
++    *plain_text = base::UTF8ToUTF16(std::string_view(
++        reinterpret_cast<const char*>(out.data()), out_size));
++    NephWipe(out);
++    return EncryptionResult::kSuccess;
++  }
++  NephWipe(out);
++  if (status == kNephStatusNotVaultBlob && hooks->legacy_allowed()) {
++    // A password from before the vault, in Chromium's own format: readable
++    // until the migration has converted every one of them.
++    return encryptor_ && encryptor_->DecryptString16(cipher_text, plain_text)
++               ? EncryptionResult::kSuccess
++               : EncryptionResult::kServiceFailure;
++  }
++  return EncryptionResult::kServiceFailure;
+ }
+ 
+ }  // namespace password_manager
 diff --git a/components/password_manager/core/browser/password_store/login_database_win.cc b/components/password_manager/core/browser/password_store/login_database_win.cc
 index 4c3483ac44bbe..3190e5e4bcf38 100644
 --- a/components/password_manager/core/browser/password_store/login_database_win.cc
@@ -616,6 +1019,29 @@ index 4c3483ac44bbe..3190e5e4bcf38 100644
  }
  
  }  // namespace password_manager
+diff --git a/components/signin/internal/identity_manager/gaia_cookie_manager_service.cc b/components/signin/internal/identity_manager/gaia_cookie_manager_service.cc
+index db2e0266aa220..68127145f55c6 100644
+--- a/components/signin/internal/identity_manager/gaia_cookie_manager_service.cc
++++ b/components/signin/internal/identity_manager/gaia_cookie_manager_service.cc
+@@ -14,6 +14,7 @@
+ #include <utility>
+ #include <vector>
+ 
++#include "base/command_line.h"
+ #include "base/feature_list.h"
+ #include "base/functional/bind.h"
+ #include "base/functional/callback.h"
+@@ -525,6 +526,10 @@ GaiaCookieManagerService::GetCachedListAccounts() {
+ }
+ 
+ void GaiaCookieManagerService::TriggerListAccounts() {
++  // Neph: no Google sign-in, so no /ListAccounts request either.
++  if (!base::CommandLine::ForCurrentProcess()->HasSwitch("neph-list-accounts")) {
++    return;
++  }
+   // Callers suspect that a check to Gaia needs to be done, don't rely on the
+   // in progress request, conditions might have changed while the request is
+   // in-flight.
 diff --git a/extensions/browser/manifest_v2_handler.cc b/extensions/browser/manifest_v2_handler.cc
 index 5841d3dfbc888..32fef85bd4bfa 100644
 --- a/extensions/browser/manifest_v2_handler.cc
@@ -678,6 +1104,290 @@ index 67abe9533c4c2..54fd3176362d1 100644
    }
  }
  
+diff --git a/media/BUILD.gn b/media/BUILD.gn
+index 5c60f7e0807c8..d1f2e8cc07065 100644
+--- a/media/BUILD.gn
++++ b/media/BUILD.gn
+@@ -86,11 +86,10 @@ buildflag_header("media_buildflags") {
+   }
+ }
+ 
+-if (proprietary_codecs && media_use_ffmpeg) {
+-  assert(
+-      ffmpeg_branding != "Chromium",
+-      "proprietary codecs and ffmpeg_branding set to Chromium are incompatible")
+-}
++# Neph (19.10.2026): proprietary_codecs with ffmpeg_branding=Chromium is
++# Neph's own configuration - H.264 and AAC through the platform's decoders,
++# none of ffmpeg's (platform_codecs_patch.py). The assertion that forbade
++# the pair is lifted.
+ 
+ # Common configuration for targets in the media directory; these must not be
+ # exported since things like USE_NEON have different meanings elsewhere in the
+diff --git a/media/ffmpeg/ffmpeg_common.cc b/media/ffmpeg/ffmpeg_common.cc
+index 280dce68853c1..3be73dbf9efce 100644
+--- a/media/ffmpeg/ffmpeg_common.cc
++++ b/media/ffmpeg/ffmpeg_common.cc
+@@ -416,6 +416,15 @@ bool AVCodecContextToAudioDecoderConfig(const AVCodecContext* codec_context,
+       break;
+ #endif
+ 
++    // Neph (19.10.2026): AAC is demuxed here and decoded by the platform
++    // (AudioToolbox), so ffmpeg has no decoder to fill |sample_fmt| and the
++    // stream would be dropped as invalid. A nominal format, like AC3 above;
++    // the decoder outputs float planar whatever is written here.
++    case AudioCodec::kAAC:
++      if (sample_format == kUnknownSampleFormat)
++        sample_format = kSampleFormatF32;
++      break;
++
+     default:
+       break;
+   }
+diff --git a/media/filters/mac/audio_toolbox_audio_decoder.cc b/media/filters/mac/audio_toolbox_audio_decoder.cc
+index 03d630b07fc9e..1343434ef2a44 100644
+--- a/media/filters/mac/audio_toolbox_audio_decoder.cc
++++ b/media/filters/mac/audio_toolbox_audio_decoder.cc
+@@ -24,6 +24,7 @@
+ #include "media/base/media_log.h"
+ #include "media/base/status.h"
+ #include "media/base/timestamp_constants.h"
++#include "media/formats/mp4/aac.h"
+ #include "media/formats/mp4/es_descriptor.h"
+ #include "media/media_buildflags.h"
+ 
+@@ -40,9 +41,48 @@ bool CanUseAudioToolbox(const AudioDecoderConfig& config) {
+     return true;
+   }
+ #endif
+-  // We use AudioToolbox for decoding xHE-AAC content and that's available on
+-  // macOS 10.15 or higher.
+-  return config.profile() == AudioCodecProfile::kXHE_AAC;
++  // Neph (19.10.2026): every AAC profile - AAC-LC, HE-AAC v1/v2 and xHE-AAC -
++  // goes through AudioToolbox. The core carries no ffmpeg AAC decoder
++  // (ffmpeg_branding=Chromium); the system's decoder is the only one.
++  return config.codec() == AudioCodec::kAAC;
++}
++
++// Neph: the AudioToolbox format of an AAC AudioSpecificConfig (ISO 14496-3):
++// the audio object type (5 bits, 31 escapes to six more), then the sampling
++// frequency index (4 bits). Chromium's own parser knows the output rate with
++// an explicit SBR extension; above the base rate it is HE-AAC, with a mono
++// core HE-AAC v2 (whose decoder takes v1 as well).
++AudioFormatID AacFormatOf(const AudioDecoderConfig& config, MediaLog* media_log) {
++  const auto& asc = config.extra_data();
++  if (config.profile() == AudioCodecProfile::kXHE_AAC) {
++    return kAudioFormatMPEGD_USAC;
++  }
++  if (asc.size() < 2) {
++    return kAudioFormatMPEG4AAC;
++  }
++  unsigned object_type = asc[0] >> 3;
++  unsigned frequency_index = (asc[0] & 0x7) << 1 | asc[1] >> 7;
++  if (object_type == 31) {
++    object_type = 32 + (((asc[0] & 0x7) << 3) | (asc[1] >> 5));
++    frequency_index = (asc[1] >> 1) & 0xF;
++  }
++  if (object_type == mp4::AAC::kXHeAAcType) {
++    return kAudioFormatMPEGD_USAC;
++  }
++  static constexpr int kRates[] = {96000, 88200, 64000, 48000, 44100, 32000, 24000,
++                                   22050, 16000, 12000, 11025, 8000,  7350,  0,
++                                   0,     0};
++  const int base_rate = kRates[frequency_index & 0xF];
++  mp4::AAC parsed;
++  const bool sbr = object_type == 5 || object_type == 29 ||
++                   (base_rate > 0 && parsed.Parse(asc, media_log) &&
++                    parsed.GetOutputSamplesPerSecond(false) > base_rate);
++  if (!sbr) {
++    return kAudioFormatMPEG4AAC;
++  }
++  const unsigned channel_config = object_type >= 32 ? 0 : (asc[1] >> 3) & 0xF;
++  return object_type == 29 || channel_config == 1 ? kAudioFormatMPEG4AAC_HE_V2
++                                                   : kAudioFormatMPEG4AAC_HE;
+ }
+ 
+ struct InputData {
+@@ -65,16 +105,34 @@ OSStatus ProvideInputCallback(AudioConverterRef decoder,
+     return kNoMoreDataError;
+   }
+ 
++  // Neph (19.10.2026): Chromium's MP4 parser (PrepareAACBuffer) puts an ADTS
++  // header in front of every AAC frame for MediaSource, for ffmpeg's sake.
++  // The AudioConverter is set up with the raw AudioSpecificConfig and does
++  // not take ADTS, so a leading header whose frame length is the packet's
++  // own is skipped: 7 bytes, 9 with a CRC (protection_absent == 0).
++  const auto data = base::span(*input_data->buffer);
++  size_t adts = 0;
++  if (data.size() >= 7 && data[0] == 0xFF && (data[1] & 0xF6) == 0xF0) {
++    const size_t frame_length = (static_cast<size_t>(data[3] & 0x03) << 11) |
++                                (static_cast<size_t>(data[4]) << 3) |
++                                (data[5] >> 5);
++    const size_t header = (data[1] & 0x01) ? 7 : 9;
++    if (frame_length == data.size() && data.size() > header)
++      adts = header;
++  }
++
+   *num_packets = buffer_list->mNumberBuffers = 1;
+   buffer_list->mBuffers[0].mNumberChannels = 0;
+-  buffer_list->mBuffers[0].mDataByteSize = input_data->buffer->size();
++  buffer_list->mBuffers[0].mDataByteSize = input_data->buffer->size() - adts;
+ 
+   // No const version of this API unfortunately, so we need const_cast().
+   buffer_list->mBuffers[0].mData =
+-      const_cast<uint8_t*>(base::span(*input_data->buffer).data());
++      const_cast<uint8_t*>(data.data() + adts);
+ 
+-  if (packets)
++  if (packets) {
++    input_data->packet.mDataByteSize = input_data->buffer->size() - adts;
+     *packets = &input_data->packet;
++  }
+ 
+   // This ensures that if this callback is called again, we'll exit via the
+   // kNoMoreDataError path above.
+@@ -272,9 +330,12 @@ bool AudioToolboxAudioDecoder::CreateDecoder(const AudioDecoderConfig& config) {
+ 
+   switch (config.codec()) {
+     case AudioCodec::kAAC: {
+-      // Input is xHE-AAC / USAC.
+-      CHECK_EQ(config.profile(), AudioCodecProfile::kXHE_AAC);
+-      input_format.mFormatID = kAudioFormatMPEGD_USAC;
++      // Neph (19.10.2026): AAC-LC, HE-AAC or xHE-AAC, from the config.
++      if (config.extra_data().empty()) {
++        MEDIA_LOG(ERROR, media_log_) << "AAC without an AudioSpecificConfig";
++        return false;
++      }
++      input_format.mFormatID = AacFormatOf(config, media_log_.get());
+       magic_cookie = mp4::ESDescriptor::CreateEsds(config.extra_data());
+ 
+       // Have macOS fill in the rest of the input_format for us.
+@@ -427,7 +488,10 @@ bool AudioToolboxAudioDecoder::CreateDecoder(const AudioDecoderConfig& config) {
+ 
+     // macOS doesn't provide a default target loudness. Use the value
+     // recommended by Fraunhofer. AC3/E-AC3 doesn't support set this,
+-    // so limit this to xHE-AAC only.
++    // so limit this to xHE-AAC only (Neph: AAC-LC and HE-AAC neither).
++    if (input_format.mFormatID != kAudioFormatMPEGD_USAC) {
++      // Nothing more to set for the older profiles.
++    } else {
+     const Float32 kDefaultLoudness = -16.0;
+     result = AudioConverterSetProperty(
+         decoder_.get(), kAudioCodecPropertyProgramTargetLevel,
+@@ -450,6 +514,7 @@ bool AudioToolboxAudioDecoder::CreateDecoder(const AudioDecoderConfig& config) {
+           << "AudioConverterSetProperty() failed to set DRC effect type.";
+       return false;
+     }
++    }
+   }
+ 
+   discard_helper_ = std::make_unique<AudioDiscardHelper>(
+diff --git a/media/filters/win/media_foundation_audio_decoder.cc b/media/filters/win/media_foundation_audio_decoder.cc
+index 2d3023bfbdb84..f5838dcb59f3a 100644
+--- a/media/filters/win/media_foundation_audio_decoder.cc
++++ b/media/filters/win/media_foundation_audio_decoder.cc
+@@ -101,7 +101,11 @@ std::optional<MFT_REGISTER_TYPE_INFO> GetTypeInfo(
+ #endif
+ #if BUILDFLAG(USE_PROPRIETARY_CODECS)
+     case AudioCodec::kAAC:
+-      if (config.profile() == AudioCodecProfile::kXHE_AAC &&
++      // Neph (20.10.2026): every AAC profile goes to Media Foundation's AAC
++      // decoder - AAC-LC and HE-AAC v1/v2 (Windows 7 and later), xHE-AAC
++      // from Windows 11 22H2. The core carries no ffmpeg AAC decoder
++      // (ffmpeg_branding=Chromium); the system's decoder is the only one.
++      if (config.profile() != AudioCodecProfile::kXHE_AAC ||
+           base::win::GetVersion() >= base::win::Version::WIN11_22H2) {
+         return MFT_REGISTER_TYPE_INFO{MFMediaType_Audio, MFAudioFormat_AAC};
+       }
+@@ -116,7 +120,9 @@ std::optional<MFT_REGISTER_TYPE_INFO> GetTypeInfo(
+   }
+ }
+ 
+-bool PopulateInputSample(IMFSample* sample, const DecoderBuffer& input) {
++bool PopulateInputSample(IMFSample* sample,
++                         const DecoderBuffer& input,
++                         bool strip_adts) {
+   Microsoft::WRL::ComPtr<IMFMediaBuffer> buffer;
+   HRESULT hr = sample->GetBufferByIndex(0, &buffer);
+   RETURN_ON_HR_FAILURE(hr, "Failed to get buffer from sample", false);
+@@ -131,12 +137,29 @@ bool PopulateInputSample(IMFSample* sample, const DecoderBuffer& input) {
+   // https://learn.microsoft.com/en-us/windows/win32/api/mfobjects/nf-mfobjects-imfmediabuffer-lock
+   auto destination = UNSAFE_BUFFERS(base::span(destination_ptr, max_length));
+ 
++  // Neph (20.10.2026): Chromium's MP4 parser (PrepareAACBuffer) puts an ADTS
++  // header in front of every AAC frame it hands to MediaSource, for ffmpeg's
++  // sake. The decoder's input type announces raw AAC (wPayloadType 0), so a
++  // leading header whose frame length is the packet's own is skipped: 7
++  // bytes, 9 with a CRC (protection_absent == 0). The file path delivers
++  // raw frames and is left alone.
++  base::span<const uint8_t> payload = base::span(input);
++  if (strip_adts && payload.size() >= 7 && payload[0] == 0xFF &&
++      (payload[1] & 0xF6) == 0xF0) {
++    const size_t frame_length = (static_cast<size_t>(payload[3] & 0x03) << 11) |
++                                (static_cast<size_t>(payload[4]) << 3) |
++                                (payload[5] >> 5);
++    const size_t header = (payload[1] & 0x01) ? 7 : 9;
++    if (frame_length == payload.size() && payload.size() > header)
++      payload = payload.subspan(header);
++  }
++
+   RETURN_ON_FAILURE(!current_length, "Input length is zero", false);
+-  RETURN_ON_FAILURE(input.size() <= max_length, "Input length is too long",
++  RETURN_ON_FAILURE(payload.size() <= max_length, "Input length is too long",
+                     false);
+-  destination.copy_prefix_from(input);
++  destination.copy_prefix_from(payload);
+ 
+-  hr = buffer->SetCurrentLength(input.size());
++  hr = buffer->SetCurrentLength(payload.size());
+   RETURN_ON_HR_FAILURE(hr, "Failed to set buffer length", false);
+ 
+   hr = buffer->Unlock();
+@@ -270,7 +293,8 @@ void MediaFoundationAudioDecoder::Decode(scoped_refptr<DecoderBuffer> buffer,
+     return;
+   }
+ 
+-  if (!PopulateInputSample(sample.Get(), *buffer)) {
++  if (!PopulateInputSample(sample.Get(), *buffer,
++                           config_.codec() == AudioCodec::kAAC)) {
+     std::move(decode_cb_bound).Run(DecoderStatus::Codes::kFailed);
+     return;
+   }
+diff --git a/media/mojo/services/gpu_mojo_media_client_mac.cc b/media/mojo/services/gpu_mojo_media_client_mac.cc
+index 1d1ec8a5dbba2..147537c97ab3b 100644
+--- a/media/mojo/services/gpu_mojo_media_client_mac.cc
++++ b/media/mojo/services/gpu_mojo_media_client_mac.cc
+@@ -33,6 +33,8 @@ class GpuMojoMediaClientMac final : public GpuMojoMediaClient {
+   GetPlatformSupportedAudioDecoderConfigs() final {
+     SupportedAudioDecoderConfigs audio_configs;
+     audio_configs.emplace_back(AudioCodec::kAAC, AudioCodecProfile::kXHE_AAC);
++    // Neph (19.10.2026): AAC-LC and HE-AAC through AudioToolbox as well.
++    audio_configs.emplace_back(AudioCodec::kAAC, AudioCodecProfile::kUnknown);
+ #if BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO)
+     audio_configs.emplace_back(AudioCodec::kAC3, AudioCodecProfile::kUnknown);
+     audio_configs.emplace_back(AudioCodec::kEAC3, AudioCodecProfile::kUnknown);
+diff --git a/media/mojo/services/gpu_mojo_media_client_win.cc b/media/mojo/services/gpu_mojo_media_client_win.cc
+index 8a4f1b8c47296..2e2a4f5f03fc4 100644
+--- a/media/mojo/services/gpu_mojo_media_client_win.cc
++++ b/media/mojo/services/gpu_mojo_media_client_win.cc
+@@ -101,9 +101,14 @@ class GpuMojoMediaClientWin final : public GpuMojoMediaClient {
+     }
+ #endif  // BUILDFLAG (ENABLE_PLATFORM_AC3_EAC3_AUDIO)
+ 
+-    if (base::win::GetVersion() >= base::win::Version::WIN11_22H2 &&
+-        InitializeMediaFoundation()) {
+-      audio_configs.emplace_back(AudioCodec::kAAC, AudioCodecProfile::kXHE_AAC);
++    if (InitializeMediaFoundation()) {
++      // Neph (20.10.2026): AAC-LC and HE-AAC through Media Foundation as well
++      // (platform_codecs_patch.py); xHE-AAC stays a Windows 11 22H2 matter.
++      audio_configs.emplace_back(AudioCodec::kAAC, AudioCodecProfile::kUnknown);
++      if (base::win::GetVersion() >= base::win::Version::WIN11_22H2) {
++        audio_configs.emplace_back(AudioCodec::kAAC,
++                                   AudioCodecProfile::kXHE_AAC);
++      }
+     }
+ 
+     return audio_configs;
 diff --git a/third_party/blink/common/page/page_zoom.cc b/third_party/blink/common/page/page_zoom.cc
 index 9d8df89ffc11a..046051713a119 100644
 --- a/third_party/blink/common/page/page_zoom.cc
@@ -694,3 +1404,481 @@ index 9d8df89ffc11a..046051713a119 100644
  const base::span<const double> kPresetBrowserZoomFactors(
      kPresetBrowserZoomFactorsArray);
  
+diff --git a/ui/gfx/canvas.cc b/ui/gfx/canvas.cc
+index 20e2e2b4a0919..6aa8c38456208 100644
+--- a/ui/gfx/canvas.cc
++++ b/ui/gfx/canvas.cc
+@@ -38,6 +38,48 @@
+ #include "ui/gfx/skia_paint_util.h"
+ #include "ui/gfx/switches.h"
+ 
++// Neph (15.10.2026): every radius is a chamfer, as corner-shape:bevel in the
++// shell (ui/styles.css): Chrome's dialogs, bubbles and controls get the cut
++// corners of Neph's own menus (scripts/chromium-patches/dialogs_patch.py).
++#include <algorithm>
++
++#include "third_party/skia/include/core/SkPathBuilder.h"
++#include "third_party/skia/include/core/SkRRect.h"
++
++namespace {
++
++[[maybe_unused]] SkPath NephBevel(const SkRect& r,
++                                  SkScalar ul,
++                                  SkScalar ur,
++                                  SkScalar lr,
++                                  SkScalar ll) {
++  const SkScalar half = std::min(r.width(), r.height()) / 2;
++  ul = std::max<SkScalar>(0, std::min(ul, half));
++  ur = std::max<SkScalar>(0, std::min(ur, half));
++  lr = std::max<SkScalar>(0, std::min(lr, half));
++  ll = std::max<SkScalar>(0, std::min(ll, half));
++  SkPathBuilder path;
++  path.moveTo(r.fLeft + ul, r.fTop);
++  path.lineTo(r.fRight - ur, r.fTop);
++  path.lineTo(r.fRight, r.fTop + ur);
++  path.lineTo(r.fRight, r.fBottom - lr);
++  path.lineTo(r.fRight - lr, r.fBottom);
++  path.lineTo(r.fLeft + ll, r.fBottom);
++  path.lineTo(r.fLeft, r.fBottom - ll);
++  path.lineTo(r.fLeft, r.fTop + ul);
++  path.close();
++  return path.detach();
++}
++
++[[maybe_unused]] SkPath NephBevel(const SkRRect& rr) {
++  return NephBevel(rr.rect(), rr.radii(SkRRect::kUpperLeft_Corner).x(),
++                   rr.radii(SkRRect::kUpperRight_Corner).x(),
++                   rr.radii(SkRRect::kLowerRight_Corner).x(),
++                   rr.radii(SkRRect::kLowerLeft_Corner).x());
++}
++
++}  // namespace
++
+ namespace gfx {
+ 
+ namespace {
+@@ -332,6 +374,12 @@ void Canvas::DrawRoundRect(const Rect& rect,
+ void Canvas::DrawRoundRect(const RectF& rect,
+                            float radius,
+                            const cc::PaintFlags& flags) {
++  // Neph: a chamfer where Chrome rounds (dialogs_patch.py).
++  if (radius > 0) {
++    const SkScalar cut = SkFloatToScalar(radius);
++    canvas_->drawPath(NephBevel(RectFToSkRect(rect), cut, cut, cut, cut), flags);
++    return;
++  }
+   canvas_->drawRoundRect(RectFToSkRect(rect), SkFloatToScalar(radius),
+                          SkFloatToScalar(radius), flags);
+ }
+diff --git a/ui/views/background.cc b/ui/views/background.cc
+index c06bc6c337772..2a5bded0d7fd7 100644
+--- a/ui/views/background.cc
++++ b/ui/views/background.cc
+@@ -34,6 +34,48 @@
+ #include "skia/ext/skia_utils_win.h"
+ #endif
+ 
++// Neph (15.10.2026): every radius is a chamfer, as corner-shape:bevel in the
++// shell (ui/styles.css): Chrome's dialogs, bubbles and controls get the cut
++// corners of Neph's own menus (scripts/chromium-patches/dialogs_patch.py).
++#include <algorithm>
++
++#include "third_party/skia/include/core/SkPathBuilder.h"
++#include "third_party/skia/include/core/SkRRect.h"
++
++namespace {
++
++[[maybe_unused]] SkPath NephBevel(const SkRect& r,
++                                  SkScalar ul,
++                                  SkScalar ur,
++                                  SkScalar lr,
++                                  SkScalar ll) {
++  const SkScalar half = std::min(r.width(), r.height()) / 2;
++  ul = std::max<SkScalar>(0, std::min(ul, half));
++  ur = std::max<SkScalar>(0, std::min(ur, half));
++  lr = std::max<SkScalar>(0, std::min(lr, half));
++  ll = std::max<SkScalar>(0, std::min(ll, half));
++  SkPathBuilder path;
++  path.moveTo(r.fLeft + ul, r.fTop);
++  path.lineTo(r.fRight - ur, r.fTop);
++  path.lineTo(r.fRight, r.fTop + ur);
++  path.lineTo(r.fRight, r.fBottom - lr);
++  path.lineTo(r.fRight - lr, r.fBottom);
++  path.lineTo(r.fLeft + ll, r.fBottom);
++  path.lineTo(r.fLeft, r.fBottom - ll);
++  path.lineTo(r.fLeft, r.fTop + ul);
++  path.close();
++  return path.detach();
++}
++
++[[maybe_unused]] SkPath NephBevel(const SkRRect& rr) {
++  return NephBevel(rr.rect(), rr.radii(SkRRect::kUpperLeft_Corner).x(),
++                   rr.radii(SkRRect::kUpperRight_Corner).x(),
++                   rr.radii(SkRRect::kLowerRight_Corner).x(),
++                   rr.radii(SkRRect::kLowerLeft_Corner).x());
++}
++
++}  // namespace
++
+ namespace views {
+ 
+ DEFINE_SAFE_CAST_TARGET(Background)
+@@ -81,7 +123,7 @@ class RoundedRectBackground : public Background {
+                                {radii_.lower_right(), radii_.lower_right()},
+                                {radii_.lower_left(),  radii_.lower_left()}};
+     const SkPath path =
+-        SkPath::RRect(SkRRect::MakeRectRadii(gfx::RectToSkRect(rect), radii));
++        NephBevel(SkRRect::MakeRectRadii(gfx::RectToSkRect(rect), radii));
+ 
+     cc::PaintFlags flags;
+     flags.setAntiAlias(true);
+diff --git a/ui/views/bubble/bubble_border.cc b/ui/views/bubble/bubble_border.cc
+index 5bb35cf1f90eb..1a34024c865e7 100644
+--- a/ui/views/bubble/bubble_border.cc
++++ b/ui/views/bubble/bubble_border.cc
+@@ -39,6 +39,48 @@
+ #include "ui/views/widget/widget.h"
+ #include "ui/wm/core/shadow_controller.h"
+ 
++// Neph (15.10.2026): every radius is a chamfer, as corner-shape:bevel in the
++// shell (ui/styles.css): Chrome's dialogs, bubbles and controls get the cut
++// corners of Neph's own menus (scripts/chromium-patches/dialogs_patch.py).
++#include <algorithm>
++
++#include "third_party/skia/include/core/SkPathBuilder.h"
++#include "third_party/skia/include/core/SkRRect.h"
++
++namespace {
++
++[[maybe_unused]] SkPath NephBevel(const SkRect& r,
++                                  SkScalar ul,
++                                  SkScalar ur,
++                                  SkScalar lr,
++                                  SkScalar ll) {
++  const SkScalar half = std::min(r.width(), r.height()) / 2;
++  ul = std::max<SkScalar>(0, std::min(ul, half));
++  ur = std::max<SkScalar>(0, std::min(ur, half));
++  lr = std::max<SkScalar>(0, std::min(lr, half));
++  ll = std::max<SkScalar>(0, std::min(ll, half));
++  SkPathBuilder path;
++  path.moveTo(r.fLeft + ul, r.fTop);
++  path.lineTo(r.fRight - ur, r.fTop);
++  path.lineTo(r.fRight, r.fTop + ur);
++  path.lineTo(r.fRight, r.fBottom - lr);
++  path.lineTo(r.fRight - lr, r.fBottom);
++  path.lineTo(r.fLeft + ll, r.fBottom);
++  path.lineTo(r.fLeft, r.fBottom - ll);
++  path.lineTo(r.fLeft, r.fTop + ul);
++  path.close();
++  return path.detach();
++}
++
++[[maybe_unused]] SkPath NephBevel(const SkRRect& rr) {
++  return NephBevel(rr.rect(), rr.radii(SkRRect::kUpperLeft_Corner).x(),
++                   rr.radii(SkRRect::kUpperRight_Corner).x(),
++                   rr.radii(SkRRect::kLowerRight_Corner).x(),
++                   rr.radii(SkRRect::kLowerLeft_Corner).x());
++}
++
++}  // namespace
++
+ namespace views {
+ 
+ namespace {
+@@ -451,11 +493,17 @@ void BubbleBorder::Paint(const views::View& view, gfx::Canvas* canvas) {
+ 
+   gfx::ScopedCanvas scoped(canvas);
+   SkRRect r_rect = GetClientRect(view);
+-  canvas->sk_canvas()->clipRRect(r_rect, SkClipOp::kDifference,
+-                                 true /*doAntiAlias*/);
+-  DrawBorderAndShadowImpl(r_rect, &cc::PaintCanvas::drawRRect, canvas,
+-                          view.GetColorProvider(), ShouldDrawStroke(),
+-                          md_shadow_elevation_, shadow_);
++  // Neph: outline, stroke and shadow follow the chamfer (dialogs_patch.py).
++  canvas->sk_canvas()->clipPath(NephBevel(r_rect), SkClipOp::kDifference,
++                                true /*doAntiAlias*/);
++  if (ShouldDrawStroke()) {
++    const SkScalar one_pixel = SkFloatToScalar(1.0f / canvas->image_scale());
++    r_rect.outset(one_pixel, one_pixel);
++  }
++  canvas->sk_canvas()->drawPath(
++      NephBevel(r_rect),
++      GetBorderAndShadowFlags(view.GetColorProvider(), md_shadow_elevation_,
++                              shadow_));
+ 
+   if (visible_arrow_) {
+     PaintVisibleArrow(view, canvas);
+@@ -689,8 +737,8 @@ bool BubbleBorder::ShouldDrawStroke() const {
+ 
+ void BubbleBorder::PaintNoShadow(const View& view, gfx::Canvas* canvas) {
+   gfx::ScopedCanvas scoped(canvas);
+-  canvas->sk_canvas()->clipRRect(GetClientRect(view), SkClipOp::kDifference,
+-                                 true /*doAntiAlias*/);
++  canvas->sk_canvas()->clipPath(NephBevel(GetClientRect(view)),
++                                SkClipOp::kDifference, true /*doAntiAlias*/);
+   canvas->sk_canvas()->drawColor(SkColors::kTransparent, SkBlendMode::kSrc);
+ }
+ 
+@@ -747,8 +795,9 @@ void BubbleBackground::Paint(gfx::Canvas* canvas, views::View* view) const {
+   gfx::RectF bounds(view->GetLocalBounds());
+   bounds.Inset(gfx::InsetsF(border_->GetInsets()));
+ 
+-  canvas->sk_canvas()->drawRRect(
+-      SkRRect(gfx::RRectF(bounds, border_->rounded_corners())), flags);
++  canvas->sk_canvas()->drawPath(
++      NephBevel(SkRRect(gfx::RRectF(bounds, border_->rounded_corners()))),
++      flags);
+ }
+ 
+ }  // namespace views
+diff --git a/ui/views/bubble/bubble_frame_view.cc b/ui/views/bubble/bubble_frame_view.cc
+index 15bdfd36473dd..16ddec4d6d7a9 100644
+--- a/ui/views/bubble/bubble_frame_view.cc
++++ b/ui/views/bubble/bubble_frame_view.cc
+@@ -63,6 +63,48 @@
+ #include "ui/ozone/public/ozone_platform.h"
+ #endif
+ 
++// Neph (15.10.2026): every radius is a chamfer, as corner-shape:bevel in the
++// shell (ui/styles.css): Chrome's dialogs, bubbles and controls get the cut
++// corners of Neph's own menus (scripts/chromium-patches/dialogs_patch.py).
++#include <algorithm>
++
++#include "third_party/skia/include/core/SkPathBuilder.h"
++#include "third_party/skia/include/core/SkRRect.h"
++
++namespace {
++
++[[maybe_unused]] SkPath NephBevel(const SkRect& r,
++                                  SkScalar ul,
++                                  SkScalar ur,
++                                  SkScalar lr,
++                                  SkScalar ll) {
++  const SkScalar half = std::min(r.width(), r.height()) / 2;
++  ul = std::max<SkScalar>(0, std::min(ul, half));
++  ur = std::max<SkScalar>(0, std::min(ur, half));
++  lr = std::max<SkScalar>(0, std::min(lr, half));
++  ll = std::max<SkScalar>(0, std::min(ll, half));
++  SkPathBuilder path;
++  path.moveTo(r.fLeft + ul, r.fTop);
++  path.lineTo(r.fRight - ur, r.fTop);
++  path.lineTo(r.fRight, r.fTop + ur);
++  path.lineTo(r.fRight, r.fBottom - lr);
++  path.lineTo(r.fRight - lr, r.fBottom);
++  path.lineTo(r.fLeft + ll, r.fBottom);
++  path.lineTo(r.fLeft, r.fBottom - ll);
++  path.lineTo(r.fLeft, r.fTop + ul);
++  path.close();
++  return path.detach();
++}
++
++[[maybe_unused]] SkPath NephBevel(const SkRRect& rr) {
++  return NephBevel(rr.rect(), rr.radii(SkRRect::kUpperLeft_Corner).x(),
++                   rr.radii(SkRRect::kUpperRight_Corner).x(),
++                   rr.radii(SkRRect::kLowerRight_Corner).x(),
++                   rr.radii(SkRRect::kLowerLeft_Corner).x());
++}
++
++}  // namespace
++
+ namespace views {
+ 
+ namespace {
+@@ -256,7 +298,7 @@ bool BubbleFrameView::GetClientMask(const gfx::Size& size, SkPath* path) const {
+       {corner_radii.upper_right(), corner_radii.upper_right()},
+       {corner_radii.lower_right(), corner_radii.lower_right()},
+       {corner_radii.lower_left(),  corner_radii.lower_left()}};
+-  *path = SkPath::RRect(SkRRect::MakeRectRadii(
++  *path = NephBevel(SkRRect::MakeRectRadii(
+       SkRect::MakeIWH(size.width(), size.height()), radii));
+   return true;
+ }
+@@ -341,7 +383,7 @@ void BubbleFrameView::GetWindowMask(const gfx::Size& size,
+                       {border_radii.upper_right(), border_radii.upper_right()},
+                       {border_radii.lower_right(), border_radii.lower_right()},
+                       {border_radii.lower_left(),  border_radii.lower_left()}};
+-    *window_mask = SkPath::RRect(SkRRect::MakeRectRadii(rect, radii));
++    *window_mask = NephBevel(SkRRect::MakeRectRadii(rect, radii));
+   } else {
+     static const int kBottomBorderShadowSize = 2;
+     rect.fBottom += SkIntToScalar(kBottomBorderShadowSize);
+diff --git a/ui/views/controls/highlight_path_generator.cc b/ui/views/controls/highlight_path_generator.cc
+index b805a1aa32d12..a82b9a2fd8255 100644
+--- a/ui/views/controls/highlight_path_generator.cc
++++ b/ui/views/controls/highlight_path_generator.cc
+@@ -14,6 +14,48 @@
+ #include "ui/views/view.h"
+ #include "ui/views/view_class_properties.h"
+ 
++// Neph (15.10.2026): every radius is a chamfer, as corner-shape:bevel in the
++// shell (ui/styles.css): Chrome's dialogs, bubbles and controls get the cut
++// corners of Neph's own menus (scripts/chromium-patches/dialogs_patch.py).
++#include <algorithm>
++
++#include "third_party/skia/include/core/SkPathBuilder.h"
++#include "third_party/skia/include/core/SkRRect.h"
++
++namespace {
++
++[[maybe_unused]] SkPath NephBevel(const SkRect& r,
++                                  SkScalar ul,
++                                  SkScalar ur,
++                                  SkScalar lr,
++                                  SkScalar ll) {
++  const SkScalar half = std::min(r.width(), r.height()) / 2;
++  ul = std::max<SkScalar>(0, std::min(ul, half));
++  ur = std::max<SkScalar>(0, std::min(ur, half));
++  lr = std::max<SkScalar>(0, std::min(lr, half));
++  ll = std::max<SkScalar>(0, std::min(ll, half));
++  SkPathBuilder path;
++  path.moveTo(r.fLeft + ul, r.fTop);
++  path.lineTo(r.fRight - ur, r.fTop);
++  path.lineTo(r.fRight, r.fTop + ur);
++  path.lineTo(r.fRight, r.fBottom - lr);
++  path.lineTo(r.fRight - lr, r.fBottom);
++  path.lineTo(r.fLeft + ll, r.fBottom);
++  path.lineTo(r.fLeft, r.fBottom - ll);
++  path.lineTo(r.fLeft, r.fTop + ul);
++  path.close();
++  return path.detach();
++}
++
++[[maybe_unused]] SkPath NephBevel(const SkRRect& rr) {
++  return NephBevel(rr.rect(), rr.radii(SkRRect::kUpperLeft_Corner).x(),
++                   rr.radii(SkRRect::kUpperRight_Corner).x(),
++                   rr.radii(SkRRect::kLowerRight_Corner).x(),
++                   rr.radii(SkRRect::kLowerLeft_Corner).x());
++}
++
++}  // namespace
++
+ namespace views {
+ 
+ HighlightPathGenerator::HighlightPathGenerator()
+@@ -43,7 +85,7 @@ SkPath HighlightPathGenerator::GetHighlightPath(const View* view) {
+   // A rounded rectangle must be supplied if using this default implementation.
+   std::optional<gfx::RRectF> round_rect = GetRoundRect(view);
+   DCHECK(round_rect);
+-  return SkPath::RRect(SkRRect{*round_rect});
++  return NephBevel(SkRRect{*round_rect});  // Neph: a chamfered focus ring
+ }
+ 
+ std::optional<gfx::RRectF> HighlightPathGenerator::GetRoundRect(
+diff --git a/ui/views/layout/layout_provider.cc b/ui/views/layout/layout_provider.cc
+index d243aa338748a..6f984b790d424 100644
+--- a/ui/views/layout/layout_provider.cc
++++ b/ui/views/layout/layout_provider.cc
+@@ -193,11 +193,12 @@ int LayoutProvider::GetCornerRadiusMetric(Emphasis emphasis,
+   switch (emphasis) {
+     case Emphasis::kNone:
+       return 0;
++    // Neph: the shell's bevels, 3 px on controls, 6 px above (dialogs_patch.py).
+     case Emphasis::kLow:
+     case Emphasis::kMedium:
+-      return 4;
++      return 3;
+     case Emphasis::kHigh:
+-      return 8;
++      return 6;
+     case Emphasis::kMaximum:
+       return std::min(size.width(), size.height()) / 2;
+   }
+@@ -230,18 +231,21 @@ int LayoutProvider::GetCornerRadiusMetric(ShapeContextTokens id,
+   DCHECK_NE(token, ShapeSysTokens::kDefault)
+       << "kDefault token means there is a missing mapping between shape tokens";
+   switch (token) {
++    // Neph: the shell's four bevels (ui/styles.css --bev-1..4): fields and
++    // small controls 3 px, buttons 6 px instead of pills (the primary button),
++    // dialogs and menus 10 px, anything larger 14 px (dialogs_patch.py).
+     case ShapeSysTokens::kXSmall:
+-      return 4;
++      return 3;
+     case ShapeSysTokens::kSmall:
+-      return 8;
++      return 3;
+     case ShapeSysTokens::kMediumSmall:
+-      return 12;
++      return 10;
+     case ShapeSysTokens::kMedium:
+-      return 16;
++      return 14;
+     case ShapeSysTokens::kLarge:
+-      return 24;
++      return 14;
+     case ShapeSysTokens::kFull:
+-      return std::min(size.width(), size.height()) / 2;
++      return std::min({6, size.width() / 2, size.height() / 2});
+     default:
+       return 0;
+   }
+diff --git a/ui/views/painter.cc b/ui/views/painter.cc
+index 967adcc60bde5..9ef7e174067e3 100644
+--- a/ui/views/painter.cc
++++ b/ui/views/painter.cc
+@@ -23,6 +23,48 @@
+ #include "ui/gfx/scoped_canvas.h"
+ #include "ui/views/view.h"
+ 
++// Neph (15.10.2026): every radius is a chamfer, as corner-shape:bevel in the
++// shell (ui/styles.css): Chrome's dialogs, bubbles and controls get the cut
++// corners of Neph's own menus (scripts/chromium-patches/dialogs_patch.py).
++#include <algorithm>
++
++#include "third_party/skia/include/core/SkPathBuilder.h"
++#include "third_party/skia/include/core/SkRRect.h"
++
++namespace {
++
++[[maybe_unused]] SkPath NephBevel(const SkRect& r,
++                                  SkScalar ul,
++                                  SkScalar ur,
++                                  SkScalar lr,
++                                  SkScalar ll) {
++  const SkScalar half = std::min(r.width(), r.height()) / 2;
++  ul = std::max<SkScalar>(0, std::min(ul, half));
++  ur = std::max<SkScalar>(0, std::min(ur, half));
++  lr = std::max<SkScalar>(0, std::min(lr, half));
++  ll = std::max<SkScalar>(0, std::min(ll, half));
++  SkPathBuilder path;
++  path.moveTo(r.fLeft + ul, r.fTop);
++  path.lineTo(r.fRight - ur, r.fTop);
++  path.lineTo(r.fRight, r.fTop + ur);
++  path.lineTo(r.fRight, r.fBottom - lr);
++  path.lineTo(r.fRight - lr, r.fBottom);
++  path.lineTo(r.fLeft + ll, r.fBottom);
++  path.lineTo(r.fLeft, r.fBottom - ll);
++  path.lineTo(r.fLeft, r.fTop + ul);
++  path.close();
++  return path.detach();
++}
++
++[[maybe_unused]] SkPath NephBevel(const SkRRect& rr) {
++  return NephBevel(rr.rect(), rr.radii(SkRRect::kUpperLeft_Corner).x(),
++                   rr.radii(SkRRect::kUpperRight_Corner).x(),
++                   rr.radii(SkRRect::kLowerRight_Corner).x(),
++                   rr.radii(SkRRect::kLowerLeft_Corner).x());
++}
++
++}  // namespace
++
+ namespace views {
+ 
+ namespace {
+@@ -103,7 +145,7 @@ void SolidRoundRectPainter::Paint(gfx::Canvas* canvas, const gfx::Size& size) {
+        {radii_.lower_right() * scale, radii_.lower_right() * scale},
+        {radii_.lower_left() * scale, radii_.lower_left() * scale}}};
+ 
+-  const SkPath fill_path = SkPath::RRect(SkRRect::MakeRectRadii(
++  const SkPath fill_path = NephBevel(SkRRect::MakeRectRadii(
+       gfx::RectFToSkRect(fill_rect), scaled_radii.data()));
+   canvas->DrawPath(fill_path, flags);
+ 
+@@ -121,7 +163,7 @@ void SolidRoundRectPainter::Paint(gfx::Canvas* canvas, const gfx::Size& size) {
+           scaled_radii[i] - SkVector{stroke_width / 2, stroke_width / 2};
+     }
+ 
+-    const SkPath stroke_path = SkPath::RRect(SkRRect::MakeRectRadii(
++    const SkPath stroke_path = NephBevel(SkRRect::MakeRectRadii(
+         gfx::RectFToSkRect(stroke_rect), stroke_radii.data()));
+     canvas->DrawPath(stroke_path, flags);
+   }

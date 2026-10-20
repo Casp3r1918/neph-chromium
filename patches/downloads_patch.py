@@ -157,8 +157,14 @@ DESTROYED_NEW = '''void CefDownloadManagerDelegateImpl::OnBrowserDestroyed(
 
 // Neph: the host checks for this export to know that downloads keep reporting
 // after their browser is gone and that partial files carry ".crdownload".
-extern "C" __declspec(dllexport) int neph_downloads_patch_level();
-extern "C" __declspec(dllexport) int neph_downloads_patch_level() {
+// Windows reaches it with GetProcAddress, the Mac with dlsym on the framework.
+#if defined(_WIN32)
+#define NEPH_DOWNLOADS_EXPORT __declspec(dllexport)
+#else
+#define NEPH_DOWNLOADS_EXPORT __attribute__((visibility("default")))
+#endif
+extern "C" NEPH_DOWNLOADS_EXPORT int neph_downloads_patch_level();
+extern "C" NEPH_DOWNLOADS_EXPORT int neph_downloads_patch_level() {
   return 1;
 }
 '''

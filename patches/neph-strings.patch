@@ -110367,7 +110367,7 @@ index e49abb86650d5..135aa65fe4364 100644
  <translation id="8690129572193755009">Gall gwefannau ofyn am drin protocolau</translation>
  <translation id="869144235543261764">Mae'r tab hwn yn chwarae fideo yn y modd llun mewn llun</translation>
 diff --git a/chrome/app/resources/generated_resources_da.xtb b/chrome/app/resources/generated_resources_da.xtb
-index f0624a64979c6..323dbb576027b 100644
+index 06d01c7cc0e90..2c5108581995f 100644
 --- a/chrome/app/resources/generated_resources_da.xtb
 +++ b/chrome/app/resources/generated_resources_da.xtb
 @@ -854,7 +854,7 @@ Du kan til enhver tid tjekke dine adgangskoder i <ph name="GOOGLE_PASSWORD_MANAG
@@ -112115,7 +112115,7 @@ index 4122a4f982ef3..a7a9574354c18 100644
  <translation id="8690129572193755009">אתרים יכולים לבקש הרשאה לטפל בפרוטוקולים</translation>
  <translation id="869144235543261764">בכרטיסייה הזו מופעל סרטון במצב 'תמונה בתוך תמונה'</translation>
 diff --git a/chrome/app/resources/generated_resources_ja.xtb b/chrome/app/resources/generated_resources_ja.xtb
-index 5d6a5d3983cfb..582500b87eb7b 100644
+index 20d74b0ba7ef7..85993cf4182d2 100644
 --- a/chrome/app/resources/generated_resources_ja.xtb
 +++ b/chrome/app/resources/generated_resources_ja.xtb
 @@ -853,7 +853,7 @@
@@ -112495,7 +112495,7 @@ index 2da2656598cf9..9d4275db26686 100644
  <translation id="8690129572193755009">ಪ್ರೊಟೊಕಾಲ್‌ಗಳನ್ನು ನಿರ್ವಹಿಸಲು ಸೈಟ್‌ಗಳು ಕೇಳಬಹುದು</translation>
  <translation id="869144235543261764">ಈ ಟ್ಯಾಬ್ ಚಿತ್ರದಲ್ಲಿ ಚಿತ್ರ ಮೋಡ್‌ನಲ್ಲಿ ವೀಡಿಯೊವನ್ನು ಪ್ಲೇ ಮಾಡುತ್ತಿದೆ</translation>
 diff --git a/chrome/app/resources/generated_resources_ko.xtb b/chrome/app/resources/generated_resources_ko.xtb
-index aa84ce4d6d00f..8e30d3beb7640 100644
+index c24b10f74d728..3d0bcb874d800 100644
 --- a/chrome/app/resources/generated_resources_ko.xtb
 +++ b/chrome/app/resources/generated_resources_ko.xtb
 @@ -854,7 +854,7 @@
@@ -113255,7 +113255,7 @@ index 75198e73ba656..18db51f7ff228 100644
  <translation id="8690129572193755009">Laman boleh meminta untuk mengendalikan protokol</translation>
  <translation id="869144235543261764">Tab ini memainkan video dalam mod gambar dalam gambar</translation>
 diff --git a/chrome/app/resources/generated_resources_my.xtb b/chrome/app/resources/generated_resources_my.xtb
-index 606f474b5adec..3380627d3b801 100644
+index 7cfc87304d7e1..695a0e059546b 100644
 --- a/chrome/app/resources/generated_resources_my.xtb
 +++ b/chrome/app/resources/generated_resources_my.xtb
 @@ -853,7 +853,7 @@
@@ -113787,7 +113787,7 @@ index 68ad4dd314a95..07be00e4768b7 100644
  <translation id="8690129572193755009">Witryny mogą prosić o zgodę na obsługę protokołów</translation>
  <translation id="869144235543261764">Na tej karcie jest odtwarzany film w trybie obrazu w obrazie</translation>
 diff --git a/chrome/app/resources/generated_resources_pt-BR.xtb b/chrome/app/resources/generated_resources_pt-BR.xtb
-index ca3054fe33571..b0d9bce4c9b6a 100644
+index 9eebf465f947d..b322bd8957585 100644
 --- a/chrome/app/resources/generated_resources_pt-BR.xtb
 +++ b/chrome/app/resources/generated_resources_pt-BR.xtb
 @@ -854,7 +854,7 @@ Verifique suas senhas a qualquer momento no <ph name="GOOGLE_PASSWORD_MANAGER" /
@@ -115231,7 +115231,7 @@ index a9d5e761ed5b7..f74fc63e591e9 100644
  <translation id="8690129572193755009">Saytlar protokollarga ishlov berish uchun ruxsat soʻray oladi</translation>
  <translation id="869144235543261764">Bu varaqdagi video tasvir ustida tasvir rejimida ijro etilmoqda</translation>
 diff --git a/chrome/app/resources/generated_resources_vi.xtb b/chrome/app/resources/generated_resources_vi.xtb
-index 0d910d7558519..cf53e554f722f 100644
+index 5413128ff2c17..7bf4555d8f177 100644
 --- a/chrome/app/resources/generated_resources_vi.xtb
 +++ b/chrome/app/resources/generated_resources_vi.xtb
 @@ -854,7 +854,7 @@ Bạn có thể kiểm tra mật khẩu bất cứ lúc nào trong <ph name="GOO
@@ -127627,7 +127627,7 @@ index 1ec555d5c7c04..02925cdca354e 100644
  <translation id="979189555234810423">Expos a Chonfensiynau</translation>
  <translation id="981121421437150478">All-lein</translation>
 diff --git a/components/strings/components_strings_da.xtb b/components/strings/components_strings_da.xtb
-index e6ff931e437b0..1fdbaca3d2299 100644
+index a5353aa2e0436..9969a2209e019 100644
 --- a/components/strings/components_strings_da.xtb
 +++ b/components/strings/components_strings_da.xtb
 @@ -11,7 +11,7 @@
@@ -127990,7 +127990,7 @@ index e6ff931e437b0..1fdbaca3d2299 100644
  <translation id="979189555234810423">Udstillinger og messer</translation>
  <translation id="981121421437150478">Offline</translation>
 diff --git a/components/strings/components_strings_de.xtb b/components/strings/components_strings_de.xtb
-index 4f74b00fe11d2..b6568dae94ff8 100644
+index 85aec01dc0b42..1497e2cf43000 100644
 --- a/components/strings/components_strings_de.xtb
 +++ b/components/strings/components_strings_de.xtb
 @@ -11,7 +11,7 @@
@@ -151956,7 +151956,7 @@ index 8845dc3592b9d..d5d62b33b2945 100644
  <translation id="979189555234810423">展覽及會議</translation>
  <translation id="981121421437150478">離線</translation>
 diff --git a/components/strings/components_strings_zh-TW.xtb b/components/strings/components_strings_zh-TW.xtb
-index 9601cb797516b..9123307f2777c 100644
+index 0bd31949c7b67..dbb24d48e09e3 100644
 --- a/components/strings/components_strings_zh-TW.xtb
 +++ b/components/strings/components_strings_zh-TW.xtb
 @@ -11,7 +11,7 @@

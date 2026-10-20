@@ -26,7 +26,7 @@ Mandatory and optional. The widevine patch is mandatory: without it the
 browser would fetch a CDM it has no licence for, so a missing anchor always
 stops the build. So is the vault patch: without it saved passwords stay under
 the key any process of the user can unwrap, whatever the settings page says.
-Everything else (mv2, branding, the three shader patches, downloads, zoom_steps, page_base) is optional: with --lenient a missing anchor is logged, listed under
+Everything else (mv2, branding, the three shader patches, downloads, zoom_steps, page_base, list_accounts, dialogs, platform_codecs) is optional: with --lenient a missing anchor is logged, listed under
 "optional_failed" in neph-patches.json and the build goes on, so a security
 update never waits for a cosmetic anchor. Without --lenient every anchor is
 fatal, which is what a hand-run wants.
@@ -68,7 +68,7 @@ Patches
             program whose link completion was seen there stayed memory-only
             and compiled again on every start.
   vault     components/password_manager/core/browser/password_store/
-            login_database{_win.cc,.cc,.h}: saved passwords are encrypted by the
+            login_database{_win.cc,_mac.cc,.cc,.h}: saved passwords are encrypted by the
             host's vault (master password + TPM-sealed device secret) instead of
             the OS key; the old blobs are converted by neph_vault_migrate; the
             store never deletes "undecryptable" passwords. Details and the ABI
@@ -90,7 +90,32 @@ Patches
             chrome/browser/download/download_core_service.cc: closing a tab no
             longer cancels every download (CEF's one Browser per tab looks
             like the last window). Details in downloads_patch.py.
+  platform_codecs  media/filters/mac/audio_toolbox_audio_decoder.cc and
+            media/mojo/services/gpu_mojo_media_client_mac.cc (19.10.2026, Fable 5.1),
+            media/filters/win/media_foundation_audio_decoder.cc and
+            media/mojo/services/gpu_mojo_media_client_win.cc (20.10.2026, Fable 5.1),
+            media/ffmpeg/ffmpeg_common.cc and media/BUILD.gn (both platforms):
+            every AAC profile through the platform's decoder (AudioToolbox, Media
+            Foundation), offered by the GPU process; with proprietary_codecs=true
+            and ffmpeg_branding=Chromium the core plays H.264 (VideoToolbox, D3D11)
+            and AAC without shipping a decoder of its own (docs/video-vision.md,
+            lane A). Details in platform_codecs_patch.py.
+  dialogs   ui/gfx/canvas.cc, ui/views/{bubble/bubble_border,bubble/bubble_frame_view,
+            background,painter,controls/highlight_path_generator,layout/layout_provider}.cc,
+            chrome/browser/ui/color/chrome_color_mixers.cc and the password and passkey
+            dialogs (15.10.2026, Opus 5.5): Chrome's own dialogs, bubbles and controls in
+            the form and colours of Neph's menus - every rounded corner a chamfer of the
+            shell's bevel sizes, Neph's grey surfaces, ink and accent from a last colour
+            mixer, no illustrations (--neph-illustrations brings them back). Details in
+            dialogs_patch.py.
 The script writes neph-patches.json next to the tree with what it did.
+
+macOS (13.10.2026): the same script patches the Mac core (scripts/mac/cef-build.sh).
+The vault patch has a body for login_database_mac.cc, and the exports of the
+vault and downloads patches carry a platform macro (dllexport on Windows, the
+visibility attribute in the framework on the Mac); the Windows output changed
+only in that macro. mrt_layout touches ANGLE's D3D11 branch, which the Mac
+compiles out: applied, without effect there.
 """
 import glob
 import json
@@ -102,7 +127,9 @@ import sys
 import tempfile
 import time
 
+import dialogs_patch
 import downloads_patch
+import platform_codecs_patch
 import vault_patch
 
 PRODUCT = 'Neph'
@@ -145,6 +172,22 @@ PAGE_BASE_NEW = ('      // Neph: opaque even when the embedder hides this view\'
                  '      // so a page without its own background shows the page base colour\n'
                  '      // instead of the themed background behind it.\n'
                  '      rwhv->SetBackgroundColor(background_visible_ ? color : SK_ColorWHITE);\n')
+# No /ListAccounts to Google (offen.md 2.38, 09.10.2026): Chromium's cookie
+# manager asks accounts.google.com which Google accounts are signed in at
+# start, when the reconcilor wants it and whenever a google.com cookie is
+# deleted, although Neph has no Google sign-in (BrowserSignin=0). The feature
+# AvoidAutoTriggerListAccountsOnStale did not stop it (net log 09.10.2026).
+# The request is dropped unless --neph-list-accounts is given; callers keep
+# the cached, empty list.
+LIST_FILE = 'components/signin/internal/identity_manager/gaia_cookie_manager_service.cc'
+LIST_INC_OLD = '#include "base/feature_list.h"\n'
+LIST_INC_NEW = '#include "base/command_line.h"\n#include "base/feature_list.h"\n'
+LIST_OLD = 'void GaiaCookieManagerService::TriggerListAccounts() {\n'
+LIST_NEW = ('void GaiaCookieManagerService::TriggerListAccounts() {\n'
+            '  // Neph: no Google sign-in, so no /ListAccounts request either.\n'
+            '  if (!base::CommandLine::ForCurrentProcess()->HasSwitch("neph-list-accounts")) {\n'
+            '    return;\n'
+            '  }\n')
 BRANDING = 'chrome/app/theme/chromium/BRANDING'
 # The GPU process keeps compiled programs in a cache of 6 MB; Neph's six sky
 # programs are about that size together, so the largest were evicted and
@@ -390,6 +433,34 @@ def patch_downloads(src, written, protected):
     return 'written' if any(changed) else 'in place'
 
 
+def patch_platform_codecs(src, written, protected):
+    """AAC through the platform decoder (platform_codecs_patch.py, 19./20.10.2026):
+    AudioToolbox on the Mac, Media Foundation on Windows. With
+    proprietary_codecs=true and ffmpeg without AAC, the system decoder is
+    the only one, so it takes every AAC profile and the GPU process offers it."""
+    for path in platform_codecs_patch.FILES:
+        if path in protected:
+            raise Anchor(path + ' is CEF-patched now; move the platform_codecs patch')
+    try:
+        texts = {path: platform_codecs_patch.build(path, pristine(src, path)) for path in platform_codecs_patch.FILES}
+    except platform_codecs_patch.AnchorMissing as e:
+        raise Anchor(str(e))
+    changed = [put(src, path, text, written) for path, text in texts.items()]
+    return 'written' if any(changed) else 'in place'
+
+
+def patch_dialogs(src, written, protected):
+    for path in dialogs_patch.FILES:
+        if path in protected:
+            raise Anchor(path + ' is CEF-patched now; move the dialogs patch')
+    try:
+        texts = {path: dialogs_patch.build(path, pristine(src, path)) for path in dialogs_patch.FILES}
+    except dialogs_patch.AnchorMissing as e:
+        raise Anchor(str(e))
+    changed = [put(src, path, text, written) for path, text in texts.items()]
+    return 'written' if any(changed) else 'in place'
+
+
 def patch_mv2(src, written):
     text = pristine(src, MV2_FILE)
     if MV2_OLD not in text:
@@ -417,6 +488,19 @@ def patch_page_base(src, written, protected):
     if PAGE_BASE_OLD not in text:
         raise Anchor(PAGE_BASE_FILE + ': ' + PAGE_BASE_OLD.splitlines()[0].strip())
     return 'written' if put(src, PAGE_BASE_FILE, text.replace(PAGE_BASE_OLD, PAGE_BASE_NEW, 1), written) else 'in place'
+
+
+def patch_list_accounts(src, written, protected):
+    if LIST_FILE in protected:
+        raise Anchor(LIST_FILE + ' is CEF-patched now; move the ListAccounts change')
+    text = read_current(src, LIST_FILE)
+    if LIST_NEW in text and LIST_INC_NEW in text:
+        return 'in place'
+    for old in (LIST_OLD, LIST_INC_OLD):
+        if old not in text:
+            raise Anchor(LIST_FILE + ': ' + old.strip())
+    text = text.replace(LIST_INC_OLD, LIST_INC_NEW, 1).replace(LIST_OLD, LIST_NEW, 1)
+    return 'written' if put(src, LIST_FILE, text, written) else 'in place'
 
 
 def patch_program_cache(src, written, protected):
@@ -537,7 +621,7 @@ def touched_paths(src, protected):
     the committed string tables: the grd files, their parts, their xtb
     translations, plus the fixed files. CEF-patched files are excluded."""
     paths = []
-    for p in (MV2_FILE, BRANDING, CACHE_FILE, SCOPE_FILE, ZOOM_FILE, PAGE_BASE_FILE, WIDEVINE_FILE, downloads_patch.CHROME_FILE) + vault_patch.FILES:
+    for p in (MV2_FILE, BRANDING, CACHE_FILE, SCOPE_FILE, ZOOM_FILE, PAGE_BASE_FILE, LIST_FILE, WIDEVINE_FILE, downloads_patch.CHROME_FILE) + vault_patch.FILES + dialogs_patch.FILES + platform_codecs_patch.FILES:
         if p not in protected:
             paths.append(p)
     for grd in GRDS:
@@ -630,7 +714,10 @@ def main(argv):
         optional('mrt_layout', lambda: patch_mrt_layout(src, written, protected))
         optional('zoom_steps', lambda: patch_zoom_steps(src, written, protected))
         optional('page_base', lambda: patch_page_base(src, written, protected))
+        optional('list_accounts', lambda: patch_list_accounts(src, written, protected))
         optional('downloads', lambda: patch_downloads(src, written, protected))
+        optional('dialogs', lambda: patch_dialogs(src, written, protected))
+        optional('platform_codecs', lambda: patch_platform_codecs(src, written, protected))
         # Mandatory, whatever the mode: see the module docstring.
         report['patches']['widevine'] = patch_widevine(src, written, protected)
         report['patches']['vault'] = patch_vault(src, written, protected)

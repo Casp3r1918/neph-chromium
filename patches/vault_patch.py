@@ -8,6 +8,11 @@ wraps its key with a master password and a TPM-sealed device secret instead.
 The seam is exactly those two functions, so the patch is small:
 
   login_database_win.cc  EncryptedString/DecryptedString call the host's hooks
+  login_database_mac.cc  the same for the Mac core (13.10.2026): a volatile wipe and the
+                         framework's visibility attribute instead of SecureZeroMemory
+                         (memset_s needs __STDC_WANT_LIB_EXT1__ and broke the build;
+                         13.10.2026, Opus 5.5)
+                         and dllexport
                          (registered through the exported neph_vault_set_hooks);
                          with no hooks nothing is encrypted or decrypted, so no
                          password can reach the disk under the OS key by accident.
@@ -31,9 +36,12 @@ src/native/vault_hooks.h; change both together.
 
 PASSWORD_STORE = 'components/password_manager/core/browser/password_store/'
 WIN_FILE = PASSWORD_STORE + 'login_database_win.cc'
+# macOS (13.10.2026): the same seam, where the key comes from the keychain
+# through os_crypt_async; the body is the Windows one without windows.h.
+MAC_FILE = PASSWORD_STORE + 'login_database_mac.cc'
 CC_FILE = PASSWORD_STORE + 'login_database.cc'
 H_FILE = PASSWORD_STORE + 'login_database.h'
-FILES = (WIN_FILE, CC_FILE, H_FILE)
+FILES = (WIN_FILE, MAC_FILE, CC_FILE, H_FILE)
 
 
 class AnchorMissing(Exception):
@@ -200,11 +208,32 @@ EncryptionResult LoginDatabase::DecryptedString(
 }  // namespace password_manager
 '''
 
+# The Mac file: no windows.h, a volatile wipe (memset_s is not declared without __STDC_WANT_LIB_EXT1__; 13.10.2026, Opus 5.5), the framework's export
+# attribute instead of dllexport; otherwise the same text, so a change to one
+# shows in the other.
+MAC_BODY = (WIN_BODY
+            .replace('#include <windows.h>\n\n', '#include <string.h>\n\n', 1)
+            .replace('    SecureZeroMemory(text.data(), text.size());', '    volatile char* p = text.data();\n    for (size_t i = 0; i < text.size(); ++i) p[i] = 0;', 1)
+            .replace('    SecureZeroMemory(bytes.data(), bytes.size());', '    volatile uint8_t* p = bytes.data();\n    for (size_t i = 0; i < bytes.size(); ++i) p[i] = 0;', 1)
+            .replace('extern "C" __declspec(dllexport) void neph_vault_set_hooks(', 'extern "C" __attribute__((visibility("default"))) void neph_vault_set_hooks(', 1)
+            .replace('// registers its hooks through neph_vault_set_hooks, exported by libcef, before',
+                     '// registers its hooks through neph_vault_set_hooks, exported by the framework, before', 1)
+            .replace('// os_crypt_async on Windows does not recognise the empty string as a valid',
+                     '// os_crypt_async does not recognise the empty string as a valid', 1))
+assert MAC_BODY.count('SecureZeroMemory') == 0 and MAC_BODY.count('__declspec') == 0 and MAC_BODY.count('windows.h') == 0
+
 CC_INCLUDES = r'''#include "sql/transaction.h"
 
 // Neph vault: the registry of open databases and the migration run.
 #include <atomic>
 #include <vector>
+
+// The exports the host reaches (GetProcAddress on Windows, dlsym on the Mac).
+#if defined(_WIN32)
+#define NEPH_VAULT_EXPORT __declspec(dllexport)
+#else
+#define NEPH_VAULT_EXPORT __attribute__((visibility("default")))
+#endif
 
 #include "base/memory/ref_counted.h"
 #include "base/no_destructor.h"
@@ -491,13 +520,13 @@ void NephStartMaintenance(bool wipe,
 
 }  // namespace password_manager
 
-extern "C" __declspec(dllexport) void neph_vault_migrate(
+extern "C" NEPH_VAULT_EXPORT void neph_vault_migrate(
     void (*done)(void*, int, int, int),
     void* context) {
   password_manager::NephStartMaintenance(false, done, context);
 }
 
-extern "C" __declspec(dllexport) void neph_vault_wipe(
+extern "C" NEPH_VAULT_EXPORT void neph_vault_wipe(
     void (*done)(void*, int, int, int),
     void* context) {
   password_manager::NephStartMaintenance(true, done, context);
@@ -527,6 +556,16 @@ def build(pristine):
     if not header.startswith('// Copyright'):
         raise AnchorMissing(WIN_FILE + ': copyright header')
     out[WIN_FILE] = header + '\n' + WIN_BODY
+
+    mac = pristine[MAC_FILE]
+    for needle in ('encryptor_->EncryptString16(plain_text, cipher_text)',
+                   'encryptor_->DecryptString16(cipher_text, plain_text)'):
+        if needle not in mac:
+            raise AnchorMissing(MAC_FILE + ': ' + needle)
+    mac_header = '\n'.join(mac.split('\n')[:3])
+    if not mac_header.startswith('// Copyright'):
+        raise AnchorMissing(MAC_FILE + ': copyright header')
+    out[MAC_FILE] = mac_header + '\n' + MAC_BODY
 
     cc = pristine[CC_FILE]
     cc = replace_once(cc, '#include "sql/transaction.h"\n', CC_INCLUDES, 'login_database.cc includes')

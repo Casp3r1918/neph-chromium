@@ -40,7 +40,16 @@ param(
     [string]$ReleaseJson = '',
     [string]$BuildRoot = 'C:\cefbuild',
     [string]$LogDir = '',
-    [string]$GnDefines = 'is_official_build=true proprietary_codecs=true ffmpeg_branding=Chrome enable_widevine=true use_thin_lto=false chrome_pgo_phase=0'
+    # Ohne eigene H.264-/AAC-Decoder (offen.md 5.1, E26 entschieden 19.10.2026):
+    # proprietary_codecs=true mit ffmpeg_branding=Chromium heißt, Chromium nimmt
+    # H.264 und AAC an, ffmpeg bringt aber keinen Decoder dafür mit; dekodiert
+    # wird mit Windows' lizenzierten Decodern (D3D11/DXVA für H.264, Media
+    # Foundation für AAC; Patch platform_codecs hebt Chromiums Assertion gegen
+    # das Paar auf). media_use_openh264=false lässt auch Ciscos Encoder weg.
+    # 09.10.–19.10.2026 war die Vorgabe proprietary_codecs=false (ein Kern, 0.4.8
+    # vom 20.10. morgens, nie veröffentlicht). Mit eigenen Decodern bauen:
+    # -GnDefines '... proprietary_codecs=true ffmpeg_branding=Chrome ...'.
+    [string]$GnDefines = 'is_official_build=true proprietary_codecs=true ffmpeg_branding=Chromium media_use_openh264=false enable_widevine=true use_thin_lto=false chrome_pgo_phase=0'
 )
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
@@ -76,6 +85,18 @@ function Set-BuildEnvironment {
     # autoninja rechnet -j = logische Kerne + NINJA_CORE_ADDITION (Vorgabe 2).
     if ($Jobs -gt 0) { $env:NINJA_CORE_ADDITION = [string]($Jobs - [Environment]::ProcessorCount) }
     if (-not ($env:PATH -split ';' | Where-Object { $_ -eq $depotTools })) { $env:PATH = $depotTools + ';' + $env:PATH }
+    # CEFs patch_updater.py ruft GNU patch auf; Windows hat keins, und ohne es
+    # scheiterte der schnelle Sync (05.10. und 08.10.2026) und der klassische
+    # Weg baute danach fast alles neu. Git for Windows bringt patch.exe mit;
+    # der Ordner kommt ans Ende des Pfads, damit sein find/sort nicht vor die
+    # Windows-Programme rückt.
+    if (-not (Get-Command patch -ErrorAction SilentlyContinue)) {
+        $candidates = @(Join-Path $env:ProgramFiles 'Git\usr\bin')
+        $git = Get-Command git.exe -ErrorAction SilentlyContinue
+        if ($git) { $dir = Split-Path -Parent $git.Source; while ($dir) { $candidates += Join-Path $dir 'usr\bin'; $dir = Split-Path -Parent $dir } }
+        $usrBin = $candidates | Where-Object { Test-Path -LiteralPath (Join-Path $_ 'patch.exe') } | Select-Object -First 1
+        if ($usrBin) { $env:PATH = $env:PATH.TrimEnd(';') + ';' + $usrBin }
+    }
 }
 
 # Ein Prozess mit niedriger Priorität, Ausgabe in eine Protokolldatei. Kinder
