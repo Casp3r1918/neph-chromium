@@ -28,3 +28,4 @@
 | 0.4.7 | 2026-10-17 | `152.0.13+g841e03d+chromium-152.0.7977.158` | `152.0.7977.158` | `2b68d2babae7` | Windows: `neph-v0.4.3` (dieselbe `libcef.dll`); macOS: unverändert 0.4.6, `neph-v0.4.6` |
 | 0.4.8 | 2026-10-20 | `152.0.14+g8a0b5b9+chromium-152.0.7977.167` | `152.0.7977.167` | `2b68d2babae7` | Windows: `neph-v0.4.8`; macOS: unverändert 0.4.6, `neph-v0.4.6` |
 | 0.4.9 | 2026-10-20 | `152.0.14+g8a0b5b9+chromium-152.0.7977.167` | `152.0.7977.167` | `2b68d2babae7` | Windows: `neph-v0.4.8` (dieselbe `libcef.dll`); macOS: unverändert 0.4.6, `neph-v0.4.6` |
+| 0.4.10 | 2026-10-21 | `152.0.14+g8a0b5b9+chromium-152.0.7977.167` | `152.0.7977.167` | `2b68d2babae7` | Windows: `neph-v0.4.8` (dieselbe `libcef.dll`); macOS: unverändert 0.4.6, `neph-v0.4.6` |
