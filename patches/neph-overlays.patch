@@ -1,0 +1,30 @@
+--- a/chrome/browser/ui/views/frame/contents_web_view.cc
++++ b/chrome/browser/ui/views/frame/contents_web_view.cc
+@@ -227,10 +227,26 @@
+   background_layer->SetColor(
+       SkColor4f::FromColor(background_visible_ ? color : SK_ColorTRANSPARENT));
+ 
++  // Neph: opaque even when the embedder hides this view's background, so a
++  // page without its own background shows the page base colour instead of
++  // the themed background behind it. A transparent document
++  // picture-in-picture window stays transparent, as CEF has it above.
++  SkColor neph_hidden_color = SK_ColorWHITE;
++#if !BUILDFLAG(IS_CHROMEOS)
++  BrowserView* neph_browser_view =
++      GetWidget() ? BrowserView::GetBrowserViewForNativeWindow(
++                        GetWidget()->GetNativeWindow())
++                  : nullptr;
++  if (neph_browser_view &&
++      PictureInPictureWindowManager::IsTransparentDocumentPictureInPicture(
++          neph_browser_view->GetDocumentPictureInPictureOptions())) {
++    neph_hidden_color = SK_ColorTRANSPARENT;
++  }
++#endif
+   SafeInvoke(web_contents())
+       .Then(&content::WebContents::GetRenderWidgetHostView)
+       .Then(&content::RenderWidgetHostView::SetBackgroundColor,
+-            background_visible_ ? color : SK_ColorTRANSPARENT);
++            background_visible_ ? color : neph_hidden_color);
+ }
+ 
+ std::unique_ptr<ui::Layer> ContentsWebView::RecreateLayer() {

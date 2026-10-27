@@ -22,7 +22,8 @@ Alle Prozesse laufen mit niedriger Priorität (BelowNormal), damit der Rechner
 nutzbar bleibt; -Jobs <n> begrenzt die parallelen Compiler (autoninja nimmt
 sonst Threads + 2; nach dem Stromausfall vom 03.10.2026 unter Volllast lief
 der Rest mit 8). Protokolle unter C:\cefbuild\pipeline\<Stempel>\.
-Exit 0 ok, 97 Patch-Anker nicht gefunden, sonst der Code der gescheiterten Stufe.
+Exit 0 ok, 97 Patch-Anker nicht gefunden, 96 das Windows SDK, das der Baum
+verlangt, fehlt (Build prüft es vor gn gen), sonst der Code der gescheiterten Stufe.
 #>
 [CmdletBinding()]
 param(
@@ -232,6 +233,23 @@ if ($Patch) {
 
 if ($Build) {
     if ($Branch -eq '') { $Branch = Resolve-Branch }
+    # Opus 5.5 (25.10.2026): das Windows SDK, das der Baum verlangt, vorher prüfen.
+    # Chromium 156 will 10.0.28000.0 (base/win/windows_version.cc lehnt ältere mit
+    # #error ab); ohne es scheiterte gn gen tief in setup_toolchain.py.
+    $toolchain = Join-Path $src 'build\toolchain\win\setup_toolchain.py'
+    $sdkMatch = if (Test-Path -LiteralPath $toolchain) { [regex]::Match((Get-Content -LiteralPath $toolchain -Raw), "(?m)^SDK_VERSION = '([0-9.]+)'") } else { $null }
+    if ($sdkMatch -and $sdkMatch.Success) {
+        $sdkVersion = $sdkMatch.Groups[1].Value
+        $kitsRoot = if ($env:WINDOWSSDKDIR) { $env:WINDOWSSDKDIR } else { Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10' }
+        $sdkInclude = Join-Path $kitsRoot "Include\$sdkVersion\um"
+        if (-not (Test-Path -LiteralPath $sdkInclude)) {
+            $have = @(Get-ChildItem -LiteralPath (Join-Path $kitsRoot 'Include') -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.Name }) -join ', '
+            Write-Times
+            Log ("Windows SDK {0} fehlt (Chromium verlangt es, installiert: {1}). Windows 11 SDK {0} samt Debugging Tools installieren, dann wiederholen." -f $sdkVersion, $have)
+            exit 96
+        }
+        Log ("Windows SDK {0} vorhanden." -f $sdkVersion)
+    }
     $head = Invoke-Git (Join-Path $src 'cef') @('rev-parse', 'HEAD')
     $arguments = @($automate, "--download-dir=$downloadDir", "--depot-tools-dir=$depotTools", '--no-depot-tools-update', '--no-update',
         "--branch=$Branch", "--checkout=$head", '--x64-build', '--force-build', '--no-debug-build', '--minimal-distrib', '--minimal-distrib-only', '--build-log-file')

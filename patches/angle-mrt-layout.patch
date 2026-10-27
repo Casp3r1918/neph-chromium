@@ -1,8 +1,8 @@
 diff --git a/src/libANGLE/renderer/d3d/ProgramExecutableD3D.cpp b/src/libANGLE/renderer/d3d/ProgramExecutableD3D.cpp
-index 01894182f9..115602f25b 100644
+index c814c0ee59..9243990d50 100644
 --- a/src/libANGLE/renderer/d3d/ProgramExecutableD3D.cpp
 +++ b/src/libANGLE/renderer/d3d/ProgramExecutableD3D.cpp
-@@ -76,12 +76,36 @@ void GetDefaultOutputLayoutFromShader(
+@@ -77,12 +77,36 @@ void GetDefaultOutputLayoutFromShader(
      std::vector<GLenum> *outputLayoutOut)
  {
      outputLayoutOut->clear();

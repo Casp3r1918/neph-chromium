@@ -32,6 +32,12 @@ neutral grey, text is ink, the one hue is the accent. So:
 
 Only .cc files change, no header: an incremental core build compiles ten
 files and links.
+
+Chromium 156 (25.10.2026, Opus 5.5): the frame, the backgrounds and the
+painters build their rounded rectangle with gfx::RoundedRect(F)ToSkRRect
+instead of SkRRect::MakeRectRadii; the same five places, the same chamfer.
+Such an edit lists one (old, new) pair per Chromium version, and the pair
+whose anchor is in the file applies, so the patch fits 152 and 156.
 """
 
 
@@ -43,6 +49,15 @@ def replace_once(text, old, new, what):
     if text.count(old) != 1:
         raise AnchorMissing('%s: %s (found %d times)' % (what, old.strip().splitlines()[0], text.count(old)))
     return text.replace(old, new, 1)
+
+
+def replace_either(text, pairs, what):
+    """One edit with a pair per Chromium version: the pair whose anchor is in
+    the file exactly once applies (25.10.2026, Opus 5.5)."""
+    for old, new in pairs:
+        if text.count(old) == 1:
+            return text.replace(old, new, 1)
+    raise AnchorMissing('%s: none of %s' % (what, ' / '.join(old.strip().splitlines()[0] for old, _ in pairs)))
 
 
 MARK = 'Neph (15.10.2026): every radius is a chamfer'
@@ -169,27 +184,47 @@ EDITS = {
         '''  canvas->sk_canvas()->drawPath(
       NephBevel(SkRRect(gfx::RRectF(bounds, border_->rounded_corners()))),
       flags);''')],
-    FRAME: [(
+    # A list instead of a pair: one pair per Chromium version, 152 first, then
+    # 156 (replace_either).
+    FRAME: [[(
         '''  *path = SkPath::RRect(SkRRect::MakeRectRadii(
       SkRect::MakeIWH(size.width(), size.height()), radii));''',
         '''  *path = NephBevel(SkRRect::MakeRectRadii(
       SkRect::MakeIWH(size.width(), size.height()), radii));'''), (
+        '''  *path =
+      SkPath::RRect(gfx::RoundedRectToSkRRect(gfx::Rect(size), corner_radii));''',
+        '''  *path =
+      NephBevel(gfx::RoundedRectToSkRRect(gfx::Rect(size), corner_radii));''')], [(
         '''    *window_mask = SkPath::RRect(SkRRect::MakeRectRadii(rect, radii));''',
-        '''    *window_mask = NephBevel(SkRRect::MakeRectRadii(rect, radii));''')],
-    BACKGROUND: [(
+        '''    *window_mask = NephBevel(SkRRect::MakeRectRadii(rect, radii));'''), (
+        '''    *window_mask = SkPath::RRect(
+        gfx::RoundedRectFToSkRRect(gfx::SkRectToRectF(rect), border_radii));''',
+        '''    *window_mask = NephBevel(
+        gfx::RoundedRectFToSkRRect(gfx::SkRectToRectF(rect), border_radii));''')]],
+    BACKGROUND: [[(
         '''    const SkPath path =
         SkPath::RRect(SkRRect::MakeRectRadii(gfx::RectToSkRect(rect), radii));''',
         '''    const SkPath path =
-        NephBevel(SkRRect::MakeRectRadii(gfx::RectToSkRect(rect), radii));''')],
-    PAINTER: [(
+        NephBevel(SkRRect::MakeRectRadii(gfx::RectToSkRect(rect), radii));'''), (
+        '''    const SkPath path = SkPath::RRect(gfx::RoundedRectToSkRRect(bounds, radii));''',
+        '''    const SkPath path = NephBevel(gfx::RoundedRectToSkRRect(bounds, radii));''')]],
+    PAINTER: [[(
         '''  const SkPath fill_path = SkPath::RRect(SkRRect::MakeRectRadii(
       gfx::RectFToSkRect(fill_rect), scaled_radii.data()));''',
         '''  const SkPath fill_path = NephBevel(SkRRect::MakeRectRadii(
       gfx::RectFToSkRect(fill_rect), scaled_radii.data()));'''), (
+        '''  const SkPath fill_path =
+      SkPath::RRect(gfx::RoundedRectFToSkRRect(fill_rect, scaled_radii));''',
+        '''  const SkPath fill_path =
+      NephBevel(gfx::RoundedRectFToSkRRect(fill_rect, scaled_radii));''')], [(
         '''    const SkPath stroke_path = SkPath::RRect(SkRRect::MakeRectRadii(
         gfx::RectFToSkRect(stroke_rect), stroke_radii.data()));''',
         '''    const SkPath stroke_path = NephBevel(SkRRect::MakeRectRadii(
-        gfx::RectFToSkRect(stroke_rect), stroke_radii.data()));''')],
+        gfx::RectFToSkRect(stroke_rect), stroke_radii.data()));'''), (
+        '''    const SkPath stroke_path =
+        SkPath::RRect(gfx::RoundedRectFToSkRRect(stroke_rect, stroke_corners));''',
+        '''    const SkPath stroke_path =
+        NephBevel(gfx::RoundedRectFToSkRRect(stroke_rect, stroke_corners));''')]],
     HIGHLIGHT: [(
         '''  return SkPath::RRect(SkRRect{*round_rect});''',
         '''  return NephBevel(SkRRect{*round_rect});  // Neph: a chamfered focus ring''')],
@@ -445,6 +480,6 @@ def build(path, text):
         raise AnchorMissing(path + ': already patched (expected the committed text)')
     if path in BEVEL_AT:
         text = replace_once(text, BEVEL_AT[path], '\n' + BEVEL.replace('Neph (15.10.2026): every radius is a chamfer', MARK) + BEVEL_AT[path].lstrip('\n'), path)
-    for old, new in EDITS[path]:
-        text = replace_once(text, old, new, path)
+    for edit in EDITS[path]:
+        text = replace_either(text, edit, path) if isinstance(edit, list) else replace_once(text, edit[0], edit[1], path)
     return text

@@ -1,6 +1,6 @@
 {
  "src": "C:\\cefbuild\\chromium_git\\chromium\\src",
- "when": "2026-10-20 08:43:25",
+ "when": "2026-10-27 11:42:22",
  "product": "Neph",
  "lenient": true,
  "patches": {
@@ -10,21 +10,23 @@
   "cache_scope": "in place",
   "mrt_layout": "in place",
   "zoom_steps": "in place",
-  "page_base": "in place",
-  "list_accounts": "in place",
+  "page_base": "in place (on CEF's version)",
+  "list_accounts": "not needed: CEF returns from TriggerListAccounts while sign-in is not allowed (signin_allowed_4276.patch)",
   "downloads": "in place",
   "dialogs": "in place",
   "platform_codecs": "in place",
+  "extensions_ui": "in place",
+  "chrome_brand": "in place",
   "widevine": "in place",
   "vault": "in place",
   "chrome/app/chromium_strings.grd": {
    "sources_changed": 2,
    "sources_written": 0,
-   "messages": 889,
-   "ids_changed": 544,
+   "messages": 951,
+   "ids_changed": 592,
    "xtb_files": 81,
    "xtb_written": 0,
-   "translations_renamed": 42201,
+   "translations_renamed": 44631,
    "cef_files_left": []
   },
   "components/components_chromium_strings.grd": {
@@ -38,23 +40,23 @@
    "cef_files_left": []
   },
   "chrome/app/generated_resources.grd": {
-   "sources_changed": 3,
+   "sources_changed": 4,
    "sources_written": 0,
-   "messages": 12738,
-   "ids_changed": 8,
+   "messages": 12912,
+   "ids_changed": 10,
    "xtb_files": 81,
    "xtb_written": 0,
-   "translations_renamed": 648,
+   "translations_renamed": 810,
    "cef_files_left": []
   },
   "components/components_strings.grd": {
    "sources_changed": 13,
    "sources_written": 0,
-   "messages": 6152,
-   "ids_changed": 40,
+   "messages": 5664,
+   "ids_changed": 42,
    "xtb_files": 81,
    "xtb_written": 0,
-   "translations_renamed": 3240,
+   "translations_renamed": 3402,
    "cef_files_left": [
     "components/version_ui_strings.grdp"
    ]
@@ -62,17 +64,17 @@
   "components/privacy_sandbox_strings.grd": {
    "sources_changed": 1,
    "sources_written": 0,
-   "messages": 64,
-   "ids_changed": 6,
+   "messages": 30,
+   "ids_changed": 1,
    "xtb_files": 81,
    "xtb_written": 0,
-   "translations_renamed": 486,
+   "translations_renamed": 81,
    "cef_files_left": []
   },
   "extensions/strings/extensions_strings.grd": {
    "sources_changed": 1,
    "sources_written": 0,
-   "messages": 136,
+   "messages": 137,
    "ids_changed": 5,
    "xtb_files": 81,
    "xtb_written": 0,
@@ -81,5 +83,8 @@
   }
  },
  "optional_failed": [],
- "files_written": 0
+ "files_written": 0,
+ "overlays": [
+  "chrome/browser/ui/views/frame/contents_web_view.cc"
+ ]
 }

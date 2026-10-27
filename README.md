@@ -12,15 +12,15 @@ verwenden möchte, erhält die Dateien vom Herausgeber auf Anfrage als Archiv.
 every modification Neph applies, and the build instructions. Valid for at least three years after each release;
 available as an archive on request.*
 
-## Aktuelle Version: Neph 0.4.8 (2026-10-20)
+## Aktuelle Version: Neph 0.4.18 (2026-10-27)
 
 | Bestandteil | Stand | Quelle |
 |---|---|---|
-| Chromium | `152.0.7977.167` (Commit `dd78960ccd8a`) | https://chromium.googlesource.com/chromium/src/+/refs/tags/152.0.7977.167 |
-| CEF | `152.0.14+g8a0b5b9+chromium-152.0.7977.167` (Branch 7977, Commit `8a0b5b9`) | https://github.com/chromiumembedded/cef/commit/8a0b5b9 |
-| ffmpeg (`third_party/ffmpeg`) | `2b68d2babae7` | https://chromium.googlesource.com/chromium/third_party/ffmpeg/+/2b68d2babae73714846961fb0ee47e3b3d2e39a9 |
-| ANGLE (`third_party/angle`) | `4f2e7d39252e` | https://chromium.googlesource.com/angle/angle/+/4f2e7d39252ed0e8387ebee1b222d4715f2dea7d |
-| Nephs Änderungen | `patches/` | dieses Repository, Tag `neph-v0.4.8` |
+| Chromium | `156.0.8078.48` (Commit `d0c02bfad08e`) | https://chromium.googlesource.com/chromium/src/+/refs/tags/156.0.8078.48 |
+| CEF | `156.0.14+g4fa4ab5+chromium-156.0.8078.48` (Branch 8078, Commit `4fa4ab5`) | https://github.com/chromiumembedded/cef/commit/4fa4ab5 |
+| ffmpeg (`third_party/ffmpeg`) | `9db86ce5b5b4` | https://chromium.googlesource.com/chromium/third_party/ffmpeg/+/9db86ce5b5b454dfc96c435f9f0723012980c37f |
+| ANGLE (`third_party/angle`) | `3b89d84e9d59` | https://chromium.googlesource.com/angle/angle/+/3b89d84e9d59f75675ac4e2bef58fc068a9f0577 |
+| Nephs Änderungen | `patches/` | dieses Repository, Tag `neph-v0.4.18` |
 | GN-Argumente | `build/GN_DEFINES.txt`, `build/args.gn` | dieses Repository |
 
 Alle weiteren Abhängigkeiten (DEPS) ergeben sich aus dem Chromium-Tag; `gclient sync` stellt sie exakt wieder her.
@@ -33,6 +33,7 @@ Alle weiteren Abhängigkeiten (DEPS) ergeben sich aus dem Chromium-Tag; `gclient
 - `patches/neph-strings.patch`: Produktname „Neph“ in den Zeichenketten-Tabellen und ihren Übersetzungen.
 - `patches/angle-mrt-layout.patch`: Änderung in ANGLE (eigenes Repository unter `third_party/angle`).
 - `patches/cef-downloads.patch`: Änderung in CEF selbst (eigenes Repository unter `cef`).
+- `patches/neph-overlays.patch`: Nephs Änderungen an Dateien, die auch CEFs eigene Patches ändern, als Diff gegen CEFs Fassung.
 - `patches/neph-patches.json`: Bericht des Skripts aus dem Build dieser Version.
 - `build/BUILD.md`, `build/cef-build.ps1`, `build/GN_DEFINES.txt`, `build/args.gn`: Bauablauf und Konfiguration.
 - `LICENSES/`: Lizenztexte von Chromium, CEF, ffmpeg (LGPL 2.1) und ANGLE.

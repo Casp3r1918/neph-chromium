@@ -11,7 +11,13 @@ the file on disk differs, so the script is idempotent by construction: a
 second run writes nothing and ninja rebuilds nothing, and an interrupted run
 is simply completed by the next one. Files that one of CEF's patches touches
 (cef/patch/patches/*.patch) are never modified, because CEF's patcher checks
-its patches by context and would report them as failed. Exit 0 when the tree
+its patches by context and would report them as failed. One exception, an
+overlay (25.10.2026, Opus 5.5): page_base on Chromium 156, whose file CEF's
+own patch changes now. Neph's edit goes on top of CEF's version on disk, away
+from CEF's hunks, so CEF's patcher still finds its patch applied; --revert
+takes it off again (automate-git --fast-update backs CEF's files up and
+compares them after patching again), and neph-overlays.patch next to the tree
+holds it as a diff against CEF's version for the source offer. Exit 0 when the tree
 is in the patched state, 1 when an anchor was not found (the tree differs
 from what a patch expects: inspect, do not build), 2 on usage errors.
 
@@ -26,7 +32,7 @@ Mandatory and optional. The widevine patch is mandatory: without it the
 browser would fetch a CDM it has no licence for, so a missing anchor always
 stops the build. So is the vault patch: without it saved passwords stay under
 the key any process of the user can unwrap, whatever the settings page says.
-Everything else (mv2, branding, the three shader patches, downloads, zoom_steps, page_base, list_accounts, dialogs, platform_codecs) is optional: with --lenient a missing anchor is logged, listed under
+Everything else (mv2, branding, the three shader patches, downloads, zoom_steps, page_base, list_accounts, dialogs, platform_codecs, extensions_ui, chrome_brand) is optional: with --lenient a missing anchor is logged, listed under
 "optional_failed" in neph-patches.json and the build goes on, so a security
 update never waits for a cosmetic anchor. Without --lenient every anchor is
 fatal, which is what a hand-run wants.
@@ -58,7 +64,14 @@ Patches
   page_base chrome/browser/ui/views/frame/contents_web_view.cc: the page's
             view stays opaque when CEF hides its background, so pages without
             a background of their own are white instead of the dark theme
-            colour behind them (06.10.2026).
+            colour behind them (06.10.2026). On 156 an overlay on CEF's
+            version of the file; a transparent document picture-in-picture
+            window, which CEF's patch adds there, stays transparent.
+  list_accounts  components/signin/internal/identity_manager/
+            gaia_cookie_manager_service.cc: no /ListAccounts request to Google
+            (09.10.2026). On 156 CEF's own patch (signin_allowed_4276.patch)
+            returns from TriggerListAccounts while sign-in is not allowed,
+            which BrowserSignin=0 says; the script then only checks for it.
   program_cache  gpu/config/gpu_preferences.h: the GPU program cache holds
             64 MB instead of 6 MB (memory and disk; Skia shares the value).
   cache_scope    gpu/ipc/service/command_buffer_stub.cc: the program-cache
@@ -108,6 +121,17 @@ Patches
             shell's bevel sizes, Neph's grey surfaces, ink and accent from a last colour
             mixer, no illustrations (--neph-illustrations brings them back). Details in
             dialogs_patch.py.
+  extensions_ui  chrome/browser/ui/views/extensions/extension_install_dialog_view.cc and
+            chrome/browser/ui/extensions/extension_install_ui_desktop.cc (24.10.2026,
+            Opus 5.5): with the host's hooks (neph_extensions_ui_set_hooks) the question
+            before an install goes to the host, which asks it in its own flyout, and the
+            note after it too, so Chrome opens no window with an empty tab for it.
+            Details in extensions_ui_patch.py and src/native/extensions_ui_hooks.h.
+  chrome_brand  components/client_hints/browser/client_hints.cc and
+            content/browser/renderer_host/render_process_host_impl.cc (24.10.2026,
+            Opus 5.5): "Google Chrome" joins the user-agent brand list, as in Chrome,
+            so Google shows no "Switch to Chrome" promotion (--neph-chromium-brand keeps
+            Chromium's list). Details in chrome_brand_patch.py.
 The script writes neph-patches.json next to the tree with what it did.
 
 macOS (13.10.2026): the same script patches the Mac core (scripts/mac/cef-build.sh).
@@ -127,8 +151,10 @@ import sys
 import tempfile
 import time
 
+import chrome_brand_patch
 import dialogs_patch
 import downloads_patch
+import extensions_ui_patch
 import platform_codecs_patch
 import vault_patch
 
@@ -172,6 +198,41 @@ PAGE_BASE_NEW = ('      // Neph: opaque even when the embedder hides this view\'
                  '      // so a page without its own background shows the page base colour\n'
                  '      // instead of the themed background behind it.\n'
                  '      rwhv->SetBackgroundColor(background_visible_ ? color : SK_ColorWHITE);\n')
+# Chromium 156 (25.10.2026, Opus 5.5): the call goes through SafeInvoke, and
+# CEF's chrome_runtime_views.patch changes the file too: a transparent
+# document picture-in-picture window hides the background and gets a
+# transparent page base. Neph's edit sits on top of CEF's version (overlay)
+# and keeps that window transparent; it uses what CEF's patch includes.
+PAGE_BASE_OLD_156 = ('  SafeInvoke(web_contents())\n'
+                     '      .Then(&content::WebContents::GetRenderWidgetHostView)\n'
+                     '      .Then(&content::RenderWidgetHostView::SetBackgroundColor,\n'
+                     '            background_visible_ ? color : SK_ColorTRANSPARENT);\n')
+PAGE_BASE_NEW_156 = ('  // Neph: opaque even when the embedder hides this view\'s background, so a\n'
+                     '  // page without its own background shows the page base colour instead of\n'
+                     '  // the themed background behind it. A transparent document\n'
+                     '  // picture-in-picture window stays transparent, as CEF has it above.\n'
+                     '  SkColor neph_hidden_color = SK_ColorWHITE;\n'
+                     '#if !BUILDFLAG(IS_CHROMEOS)\n'
+                     '  BrowserView* neph_browser_view =\n'
+                     '      GetWidget() ? BrowserView::GetBrowserViewForNativeWindow(\n'
+                     '                        GetWidget()->GetNativeWindow())\n'
+                     '                  : nullptr;\n'
+                     '  if (neph_browser_view &&\n'
+                     '      PictureInPictureWindowManager::IsTransparentDocumentPictureInPicture(\n'
+                     '          neph_browser_view->GetDocumentPictureInPictureOptions())) {\n'
+                     '    neph_hidden_color = SK_ColorTRANSPARENT;\n'
+                     '  }\n'
+                     '#endif\n'
+                     '  SafeInvoke(web_contents())\n'
+                     '      .Then(&content::WebContents::GetRenderWidgetHostView)\n'
+                     '      .Then(&content::RenderWidgetHostView::SetBackgroundColor,\n'
+                     '            background_visible_ ? color : neph_hidden_color);\n')
+PAGE_BASE_156_NEEDS = ('#include "chrome/browser/picture_in_picture/picture_in_picture_window_manager.h"\n',
+                       '#include "chrome/browser/ui/views/frame/browser_view.h"\n')
+PAGE_BASE_EDITS = ((PAGE_BASE_OLD, PAGE_BASE_NEW), (PAGE_BASE_OLD_156, PAGE_BASE_NEW_156))
+# Edits on files that CEF's patches change too (see the module docstring):
+# path -> (old, new) pairs; --revert and neph-overlays.patch undo them.
+OVERLAYS = {PAGE_BASE_FILE: PAGE_BASE_EDITS}
 # No /ListAccounts to Google (offen.md 2.38, 09.10.2026): Chromium's cookie
 # manager asks accounts.google.com which Google accounts are signed in at
 # start, when the reconcilor wants it and whenever a google.com cookie is
@@ -188,6 +249,13 @@ LIST_NEW = ('void GaiaCookieManagerService::TriggerListAccounts() {\n'
             '  if (!base::CommandLine::ForCurrentProcess()->HasSwitch("neph-list-accounts")) {\n'
             '    return;\n'
             '  }\n')
+# Chromium 156 (25.10.2026, Opus 5.5): CEF's signin_allowed_4276.patch opens
+# TriggerListAccounts with this gate; Neph's policy BrowserSignin=0 sets
+# prefs::kSigninAllowed to false, so the request stays away without Neph's edit.
+LIST_CEF_GATE = ('void GaiaCookieManagerService::TriggerListAccounts() {\n'
+                 '  if (!signin_client_->GetPrefs()->GetBoolean(prefs::kSigninAllowed)) {\n'
+                 '    return;\n'
+                 '  }\n')
 BRANDING = 'chrome/app/theme/chromium/BRANDING'
 # The GPU process keeps compiled programs in a cache of 6 MB; Neph's six sky
 # programs are about that size together, so the largest were evicted and
@@ -461,6 +529,20 @@ def patch_dialogs(src, written, protected):
     return 'written' if any(changed) else 'in place'
 
 
+def patch_module(module, name, src, written, protected):
+    """A patch kept in a module of its own with FILES and build(path, text),
+    such as extensions_ui and chrome_brand (24.10.2026, Opus 5.5)."""
+    for path in module.FILES:
+        if path in protected:
+            raise Anchor('%s is CEF-patched now; move the %s patch' % (path, name))
+    try:
+        texts = {path: module.build(path, pristine(src, path)) for path in module.FILES}
+    except module.AnchorMissing as e:
+        raise Anchor(str(e))
+    changed = [put(src, path, text, written) for path, text in texts.items()]
+    return 'written' if any(changed) else 'in place'
+
+
 def patch_mv2(src, written):
     text = pristine(src, MV2_FILE)
     if MV2_OLD not in text:
@@ -480,19 +562,55 @@ def patch_zoom_steps(src, written, protected):
 
 
 def patch_page_base(src, written, protected):
-    if PAGE_BASE_FILE in protected:
-        raise Anchor(PAGE_BASE_FILE + ' is CEF-patched now; move the page base change')
-    text = read_current(src, PAGE_BASE_FILE)
-    if PAGE_BASE_NEW in text:
-        return 'in place'
-    if PAGE_BASE_OLD not in text:
-        raise Anchor(PAGE_BASE_FILE + ': ' + PAGE_BASE_OLD.splitlines()[0].strip())
-    return 'written' if put(src, PAGE_BASE_FILE, text.replace(PAGE_BASE_OLD, PAGE_BASE_NEW, 1), written) else 'in place'
+    """152: the committed file. 156: an overlay on CEF's version on disk
+    (CEF's patcher has run before, cef-build.ps1 -Patch)."""
+    overlay = PAGE_BASE_FILE in protected
+    text = on_disk(src, PAGE_BASE_FILE) if overlay else read_current(src, PAGE_BASE_FILE)
+    where = ' (on CEF\'s version)' if overlay else ''
+    if any(new in text for _, new in PAGE_BASE_EDITS):
+        return 'in place' + where
+    for old, new in PAGE_BASE_EDITS:
+        if text.count(old) != 1:
+            continue
+        if new == PAGE_BASE_NEW_156:
+            missing = [inc.strip() for inc in PAGE_BASE_156_NEEDS if inc not in text]
+            if missing:
+                raise Anchor(PAGE_BASE_FILE + ': without CEF\'s picture-in-picture change (' + ', '.join(missing) + '); revisit page_base')
+        return ('written' if put(src, PAGE_BASE_FILE, text.replace(old, new, 1), written) else 'in place') + where
+    raise Anchor(PAGE_BASE_FILE + ': ' + ' / '.join(old.splitlines()[0].strip() for old, _ in PAGE_BASE_EDITS))
+
+
+def cef_version(text, pairs):
+    """An overlay file without Neph's edit: CEF's version, as CEF's patcher
+    left it."""
+    for old, new in pairs:
+        if new in text:
+            return text.replace(new, old, 1)
+    return text
+
+
+def overlay_diff(src, protected):
+    """Neph's edits on files CEF's patches change, as a diff against CEF's
+    version: neph-code.patch of the source offer leaves CEF's files out."""
+    import difflib
+    out = []
+    for path, pairs in OVERLAYS.items():
+        if path not in protected or not os.path.exists(os.path.join(src, path)):
+            continue
+        text = on_disk(src, path)
+        base = cef_version(text, pairs)
+        if base != text:
+            out.extend(difflib.unified_diff(base.splitlines(True), text.splitlines(True), 'a/' + path, 'b/' + path))
+    return ''.join(out)
 
 
 def patch_list_accounts(src, written, protected):
     if LIST_FILE in protected:
-        raise Anchor(LIST_FILE + ' is CEF-patched now; move the ListAccounts change')
+        # 156: CEF's own gate does it (LIST_CEF_GATE); Neph's edit stays away
+        # from CEF's file.
+        if LIST_CEF_GATE in on_disk(src, LIST_FILE):
+            return 'not needed: CEF returns from TriggerListAccounts while sign-in is not allowed (signin_allowed_4276.patch)'
+        raise Anchor(LIST_FILE + ' is CEF-patched now, without the sign-in gate; move the ListAccounts change')
     text = read_current(src, LIST_FILE)
     if LIST_NEW in text and LIST_INC_NEW in text:
         return 'in place'
@@ -621,7 +739,7 @@ def touched_paths(src, protected):
     the committed string tables: the grd files, their parts, their xtb
     translations, plus the fixed files. CEF-patched files are excluded."""
     paths = []
-    for p in (MV2_FILE, BRANDING, CACHE_FILE, SCOPE_FILE, ZOOM_FILE, PAGE_BASE_FILE, LIST_FILE, WIDEVINE_FILE, downloads_patch.CHROME_FILE) + vault_patch.FILES + dialogs_patch.FILES + platform_codecs_patch.FILES:
+    for p in (MV2_FILE, BRANDING, CACHE_FILE, SCOPE_FILE, ZOOM_FILE, PAGE_BASE_FILE, LIST_FILE, WIDEVINE_FILE, downloads_patch.CHROME_FILE) + vault_patch.FILES + dialogs_patch.FILES + platform_codecs_patch.FILES + extensions_ui_patch.FILES + chrome_brand_patch.FILES:
         if p not in protected:
             paths.append(p)
     for grd in GRDS:
@@ -669,11 +787,19 @@ def revert(src):
     if r.returncode != 0:
         raise SystemExit('git checkout in %s failed: %s' %
                          (downloads_patch.REPO, r.stderr.decode('utf-8', 'replace').strip()))
-    report = os.path.join(src, 'neph-patches.json')
-    if os.path.exists(report):
-        os.remove(report)
-    log('reverted: %d paths restored to their committed content (plus %s and %s)' %
-        (len(paths), MRT_FILE, downloads_patch.FILE))
+    # Overlays back to CEF's version: CEF's patch updater compares its files
+    # after patching again with the backup it made before (fast update).
+    overlays = []
+    for path, pairs in OVERLAYS.items():
+        if path in protected and os.path.exists(os.path.join(src, path)):
+            if put(src, path, cef_version(on_disk(src, path), pairs), overlays):
+                log('overlay taken off: ' + path)
+    for name in ('neph-patches.json', 'neph-overlays.patch'):
+        report = os.path.join(src, name)
+        if os.path.exists(report):
+            os.remove(report)
+    log('reverted: %d paths restored to their committed content (plus %s and %s), %d overlay(s) to CEF\'s version' %
+        (len(paths), MRT_FILE, downloads_patch.FILE, len(overlays)))
     return 0
 
 
@@ -718,6 +844,8 @@ def main(argv):
         optional('downloads', lambda: patch_downloads(src, written, protected))
         optional('dialogs', lambda: patch_dialogs(src, written, protected))
         optional('platform_codecs', lambda: patch_platform_codecs(src, written, protected))
+        optional('extensions_ui', lambda: patch_module(extensions_ui_patch, 'extensions_ui', src, written, protected))
+        optional('chrome_brand', lambda: patch_module(chrome_brand_patch, 'chrome_brand', src, written, protected))
         # Mandatory, whatever the mode: see the module docstring.
         report['patches']['widevine'] = patch_widevine(src, written, protected)
         report['patches']['vault'] = patch_vault(src, written, protected)
@@ -738,6 +866,15 @@ def main(argv):
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     report['files_written'] = len(written)
+    # The overlays as a diff against CEF's version (source-offer.ps1 copies it).
+    overlays = overlay_diff(src, protected)
+    overlay_path = os.path.join(src, 'neph-overlays.patch')
+    report['overlays'] = sorted(p for p in OVERLAYS if p in protected and '+++ b/' + p in overlays)
+    if overlays:
+        with open(overlay_path, 'wb') as f:
+            f.write(overlays.encode('utf-8'))
+    elif os.path.exists(overlay_path):
+        os.remove(overlay_path)
     with open(os.path.join(src, 'neph-patches.json'), 'w',
               encoding='utf-8') as f:
         json.dump(report, f, indent=1)

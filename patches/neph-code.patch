@@ -17,7 +17,7 @@ index f8363d5b294fe..29a7ff9acefde 100644
  MAC_BUNDLE_ID=org.chromium.Chromium
  MAC_CREATOR_CODE=Cr24
 diff --git a/chrome/browser/component_updater/registration.cc b/chrome/browser/component_updater/registration.cc
-index 9fd11c9f722cb..a94a3c005e4ac 100644
+index 9cf5a226c7f74..2ef8beea5631e 100644
 --- a/chrome/browser/component_updater/registration.cc
 +++ b/chrome/browser/component_updater/registration.cc
 @@ -4,6 +4,7 @@
@@ -28,7 +28,7 @@ index 9fd11c9f722cb..a94a3c005e4ac 100644
  #include "base/feature_list.h"
  #include "base/files/file_path.h"
  #include "base/files/file_util.h"
-@@ -144,7 +145,11 @@ void RegisterComponentsForUpdate() {
+@@ -149,7 +150,11 @@ void RegisterComponentsForUpdate() {
  #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
  
  #if BUILDFLAG(ENABLE_WIDEVINE_CDM_COMPONENT)
@@ -60,10 +60,10 @@ index c0822519d6986..bd7babd424f50 100644
        g_browser_process->profile_manager()->GetLoadedProfiles());
    for (auto it = profiles.begin(); it < profiles.end(); ++it) {
 diff --git a/chrome/browser/ui/color/chrome_color_mixers.cc b/chrome/browser/ui/color/chrome_color_mixers.cc
-index 9698e807b11df..0c675dc796a82 100644
+index 8432f49468346..2bc059e7ed16f 100644
 --- a/chrome/browser/ui/color/chrome_color_mixers.cc
 +++ b/chrome/browser/ui/color/chrome_color_mixers.cc
-@@ -24,6 +24,18 @@
+@@ -25,6 +25,18 @@
  #include "chrome/browser/ui/color/tab_strip_color_mixer.h"
  #include "ui/color/color_provider_utils.h"
  
@@ -82,7 +82,7 @@ index 9698e807b11df..0c675dc796a82 100644
  namespace {
  
  class ChromeColorProviderUtilsCallbacks
-@@ -53,6 +65,137 @@ bool ChromeColorProviderUtilsCallbacks::ColorIdName(
+@@ -67,6 +79,137 @@ bool ChromeColorProviderUtilsCallbacks::ColorIdToCSSColorId(
  
  }  // namespace
  
@@ -220,7 +220,7 @@ index 9698e807b11df..0c675dc796a82 100644
  void AddChromeColorMixers(ui::ColorProvider* provider,
                            const ui::ColorProviderKey& key) {
    static base::NoDestructor<ChromeColorProviderUtilsCallbacks>
-@@ -81,4 +224,7 @@ void AddChromeColorMixers(ui::ColorProvider* provider,
+@@ -95,4 +238,7 @@ void AddChromeColorMixers(ui::ColorProvider* provider,
    if (key.app_controller) {
      key.app_controller->AddColorMixers(provider, key);
    }
@@ -228,29 +228,259 @@ index 9698e807b11df..0c675dc796a82 100644
 +  // Neph: last, so Neph's colours win (dialogs_patch.py).
 +  AddNephColorMixer(provider, key);
  }
-diff --git a/chrome/browser/ui/views/frame/contents_web_view.cc b/chrome/browser/ui/views/frame/contents_web_view.cc
-index c49d4c8b7e721..4723e8748191b 100644
---- a/chrome/browser/ui/views/frame/contents_web_view.cc
-+++ b/chrome/browser/ui/views/frame/contents_web_view.cc
-@@ -207,8 +207,10 @@ void ContentsWebView::UpdateBackgroundColor() {
-     content::RenderWidgetHostView* rwhv =
-         web_contents()->GetRenderWidgetHostView();
-     if (rwhv) {
--      rwhv->SetBackgroundColor(background_visible_ ? color
--                                                   : SK_ColorTRANSPARENT);
-+      // Neph: opaque even when the embedder hides this view's background,
-+      // so a page without its own background shows the page base colour
-+      // instead of the themed background behind it.
-+      rwhv->SetBackgroundColor(background_visible_ ? color : SK_ColorWHITE);
-     }
+diff --git a/chrome/browser/ui/extensions/extension_install_ui_desktop.cc b/chrome/browser/ui/extensions/extension_install_ui_desktop.cc
+index c9e2a59c3e0dd..16ac45fc8857a 100644
+--- a/chrome/browser/ui/extensions/extension_install_ui_desktop.cc
++++ b/chrome/browser/ui/extensions/extension_install_ui_desktop.cc
+@@ -52,6 +52,13 @@
+ #include "content/public/browser/web_contents.h"
+ #include "extensions/browser/install/crx_install_error.h"
+ #include "extensions/common/extension.h"
++
++// Neph (24.10.2026, Opus 5.5): defined with the install dialog
++// (extension_install_dialog_view.cc); the host announces an installed
++// extension itself (scripts/chromium-patches/extensions_ui_patch.py).
++#include "base/json/json_writer.h"
++#include "base/values.h"
++extern "C" int neph_extensions_ui_installed(const char* json);
+ #include "ui/base/l10n/l10n_util.h"
+ 
+ #if BUILDFLAG(IS_CHROMEOS)
+@@ -130,6 +137,19 @@ void ExtensionInstallUIDesktop::OnInstallSuccess(
+     return;
    }
- }
+ 
++  // Neph: the host announces the extension in its toolbar; Chrome's note
++  // would open a window of its own with an empty tab for it
++  // (FindOrCreateVisibleBrowser below; extensions_ui_patch.py).
++  if (!extension->is_app()) {
++    base::DictValue neph_note;
++    neph_note.Set("id", extension->id());
++    neph_note.Set("name", extension->name());
++    if (neph_extensions_ui_installed(
++            base::WriteJson(neph_note).value_or("{}").c_str()) == 1) {
++      return;
++    }
++  }
++
+   // Extensions aren't enabled by default in incognito so we confirm
+   // the install in a normal window.
+   Profile* current_profile = profile()->GetOriginalProfile();
+diff --git a/chrome/browser/ui/views/extensions/extension_install_dialog_view.cc b/chrome/browser/ui/views/extensions/extension_install_dialog_view.cc
+index 83ce5b59c1e6b..40d1faf86ec07 100644
+--- a/chrome/browser/ui/views/extensions/extension_install_dialog_view.cc
++++ b/chrome/browser/ui/views/extensions/extension_install_dialog_view.cc
+@@ -64,6 +64,192 @@ using content::OpenURLParams;
+ using content::Referrer;
+ using extensions::InstallPromptData;
+ 
++// Neph (24.10.2026, Opus 5.5): the host asks the install question itself, in
++// the form of its own menus under its extensions button, and announces an
++// installed extension itself; Chrome's dialog lands at the top left of the
++// page and its note opens a window of Chrome's own
++// (scripts/chromium-patches/extensions_ui_patch.py; src/native/extensions_ui_hooks.h
++// holds the same ABI on the host side). Without hooks everything stays Chrome's.
++#include <atomic>
++#include <cstdint>
++#include <map>
++#include <optional>
++#include <vector>
++
++#include "base/base64.h"
++#include "base/json/json_writer.h"
++#include "base/location.h"
++#include "base/no_destructor.h"
++#include "base/task/single_thread_task_runner.h"
++#include "base/values.h"
++#include "build/build_config.h"
++#include "content/public/browser/browser_task_traits.h"
++#include "ui/gfx/codec/png_codec.h"
++#include "ui/gfx/image/image.h"
++
++#if BUILDFLAG(IS_WIN)
++#define NEPH_EXTENSIONS_UI_EXPORT __declspec(dllexport)
++#else
++#define NEPH_EXTENSIONS_UI_EXPORT __attribute__((visibility("default")))
++#endif
++
++extern "C" {
++struct NephExtensionsUiHooks {
++  uint32_t size;
++  uint32_t version;  // 1
++  // The question before an install: |json| (UTF-8) carries the texts Chrome's
++  // dialog would show. 1: the host asks it and answers later through
++  // neph_extensions_ui_answer(|id|, ...); anything else: Chrome's dialog.
++  int (*prompt)(int32_t id, const char* json);
++  // The question |id| is void; the host closes its dialog without answering.
++  void (*withdraw)(int32_t id);
++  // Chrome installed an extension the user said yes to: |json| = {id, name}.
++  // 1: the host announces it; anything else: Chrome's note.
++  int (*installed)(const char* json);
++};
++NEPH_EXTENSIONS_UI_EXPORT void neph_extensions_ui_set_hooks(
++    const NephExtensionsUiHooks* hooks);
++NEPH_EXTENSIONS_UI_EXPORT void neph_extensions_ui_answer(int32_t id,
++                                                         int32_t result);
++int neph_extensions_ui_installed(const char* json);
++}  // extern "C"
++
++namespace {
++
++std::atomic<const NephExtensionsUiHooks*> g_neph_hooks{nullptr};
++
++struct NephPendingPrompt {
++  ExtensionInstallPrompt::DoneCallback done;
++  std::unique_ptr<InstallPromptData> prompt;
++  std::unique_ptr<ExtensionInstallPromptShowParams> show_params;
++};
++
++std::map<int32_t, NephPendingPrompt>& NephPending() {
++  static base::NoDestructor<std::map<int32_t, NephPendingPrompt>> pending;
++  return *pending;
++}
++
++int32_t g_neph_next_prompt = 0;
++
++const char* NephPromptType(InstallPromptData::PromptType type) {
++  switch (type) {
++    case InstallPromptData::INSTALL_PROMPT:
++      return "install";
++    case InstallPromptData::RE_ENABLE_PROMPT:
++      return "re-enable";
++    case InstallPromptData::PERMISSIONS_PROMPT:
++      return "permissions";
++    default:
++      return nullptr;
++  }
++}
++
++// The question as the host shows it: the texts of Chrome's dialog, its icon.
++std::string NephPromptJson(const InstallPromptData& prompt, const char* type) {
++  base::DictValue dict;
++  dict.Set("type", type);
++  if (const extensions::Extension* extension = prompt.extension()) {
++    dict.Set("extensionId", extension->id());
++    dict.Set("name", extension->name());
++  }
++  dict.Set("title", prompt.GetDialogTitle());
++  dict.Set("accept", prompt.GetAcceptButtonLabel());
++  dict.Set("cancel", prompt.GetAbortButtonLabel());
++  dict.Set("heading", prompt.GetPermissionsHeading());
++  dict.Set("withheld", prompt.ShouldWithheldPermissionsOnDialogAccept());
++  base::ListValue permissions;
++  for (size_t i = 0; i < prompt.GetPermissionCount(); ++i) {
++    permissions.Append(prompt.GetPermission(i));
++  }
++  dict.Set("permissions", std::move(permissions));
++  if (!prompt.icon().IsEmpty()) {
++    std::optional<std::vector<uint8_t>> png =
++        gfx::PNGCodec::EncodeBGRASkBitmap(prompt.icon().AsBitmap(), false);
++    if (png) {
++      dict.Set("icon", "data:image/png;base64," + base::Base64Encode(*png));
++    }
++  }
++  return base::WriteJson(dict).value_or("{}");
++}
++
++// Hands the question to the host; true when the host asks it. The question
++// keeps Chrome's callback until the host's answer.
++bool NephAskHost(
++    std::unique_ptr<ExtensionInstallPromptShowParams>& show_params,
++    ExtensionInstallPrompt::DoneCallback& done,
++    std::unique_ptr<InstallPromptData>& prompt) {
++  const NephExtensionsUiHooks* hooks = g_neph_hooks.load();
++  if (!hooks || !hooks->prompt || !prompt ||
++      prompt->requires_parent_permission()) {
++    return false;
++  }
++  const char* type = NephPromptType(prompt->type());
++  if (!type) {
++    return false;
++  }
++  const int32_t id = ++g_neph_next_prompt;
++  const std::string json = NephPromptJson(*prompt, type);
++  if (hooks->prompt(id, json.c_str()) != 1) {
++    return false;
++  }
++  prompt->OnDialogOpened();
++  NephPending().emplace(
++      id, NephPendingPrompt{std::move(done), std::move(prompt),
++                            std::move(show_params)});
++  return true;
++}
++
++}  // namespace
++
++extern "C" NEPH_EXTENSIONS_UI_EXPORT void neph_extensions_ui_set_hooks(
++    const NephExtensionsUiHooks* hooks) {
++  g_neph_hooks.store(hooks && hooks->version == 1 &&
++                             hooks->size >= sizeof(NephExtensionsUiHooks)
++                         ? hooks
++                         : nullptr);
++}
++
++// 1: accepted; 2: accepted without the withheld site access; anything else:
++// cancelled. Runs on the UI thread whichever thread calls.
++extern "C" NEPH_EXTENSIONS_UI_EXPORT void neph_extensions_ui_answer(
++    int32_t id,
++    int32_t result) {
++  content::GetUIThreadTaskRunner({})->PostTask(
++      FROM_HERE, base::BindOnce(
++                     [](int32_t id, int32_t result) {
++                       auto& pending = NephPending();
++                       auto it = pending.find(id);
++                       if (it == pending.end()) {
++                         return;
++                       }
++                       NephPendingPrompt entry = std::move(it->second);
++                       pending.erase(it);
++                       if (result == 1 || result == 2) {
++                         entry.prompt->OnDialogAccepted();
++                         std::move(entry.done).Run(
++                             ExtensionInstallPrompt::DoneCallbackPayload(
++                                 result == 2 &&
++                                         entry.prompt
++                                             ->ShouldWithheldPermissionsOnDialogAccept()
++                                     ? ExtensionInstallPrompt::Result::
++                                           ACCEPTED_WITH_WITHHELD_PERMISSIONS
++                                     : ExtensionInstallPrompt::Result::
++                                           ACCEPTED));
++                       } else {
++                         entry.prompt->OnDialogCanceled();
++                         std::move(entry.done).Run(
++                             ExtensionInstallPrompt::DoneCallbackPayload(
++                                 ExtensionInstallPrompt::Result::USER_CANCELED));
++                       }
++                     },
++                     id, result));
++}
++
++extern "C" int neph_extensions_ui_installed(const char* json) {
++  const NephExtensionsUiHooks* hooks = g_neph_hooks.load();
++  return hooks && hooks->installed ? hooks->installed(json) : 0;
++}
++
+ namespace {
+ 
+ // Time delay before the install button is enabled after initial display.
+@@ -88,6 +274,11 @@ void ShowExtensionInstallDialogImpl(
+     std::unique_ptr<InstallPromptData> prompt) {
+   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+ 
++  // Neph: the host asks this itself (extensions_ui_patch.py).
++  if (NephAskHost(show_params, done_callback, prompt)) {
++    return;
++  }
++
+   // If the dialog has to be parented to WebContents, force activate the
+   // contents. See crbug.com/40059470.
+   content::WebContents* web_contents = show_params->GetParentWebContents();
 diff --git a/chrome/browser/ui/views/passwords/password_bubble_view_base.cc b/chrome/browser/ui/views/passwords/password_bubble_view_base.cc
-index fd0e31f53323b..2973691832cbb 100644
+index c38da74fe17a5..669d41eb79516 100644
 --- a/chrome/browser/ui/views/passwords/password_bubble_view_base.cc
 +++ b/chrome/browser/ui/views/passwords/password_bubble_view_base.cc
-@@ -36,6 +36,8 @@
- #include "components/tabs/public/tab_interface.h"
+@@ -37,6 +37,8 @@
+ #include "content/public/browser/navigation_controller.h"
  #include "ui/base/metadata/metadata_impl_macros.h"
  
 +#include "base/command_line.h"  // Neph (dialogs_patch.py)
@@ -258,7 +488,7 @@ index fd0e31f53323b..2973691832cbb 100644
  #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
  #include "chrome/browser/ui/views/passwords/password_relaunch_chrome_view.h"
  #endif
-@@ -259,6 +261,10 @@ PasswordBubbleViewBase::~PasswordBubbleViewBase() {
+@@ -260,6 +262,10 @@ PasswordBubbleViewBase::~PasswordBubbleViewBase() {
  
  void PasswordBubbleViewBase::SetBubbleHeader(int light_image_id,
                                               int dark_image_id) {
@@ -269,7 +499,7 @@ index fd0e31f53323b..2973691832cbb 100644
    ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
    auto image_view = std::make_unique<ThemeTrackingNonAccessibleImageView>(
        *bundle.GetImageSkiaNamed(light_image_id),
-@@ -279,6 +285,10 @@ void PasswordBubbleViewBase::SetBubbleHeader(int light_image_id,
+@@ -280,6 +286,10 @@ void PasswordBubbleViewBase::SetBubbleHeader(int light_image_id,
  }
  
  void PasswordBubbleViewBase::SetBubbleHeaderLottie(int lottie_image_id) {
@@ -305,11 +535,47 @@ index a462df6164efc..04d4602364cdc 100644
    constexpr int kImageHeight = 112;
    constexpr int kHeaderHeight =
        kImageHeight + kImageMarginTop + kImageMarginBottom;
+diff --git a/components/client_hints/browser/client_hints.cc b/components/client_hints/browser/client_hints.cc
+index f6509a9755581..82f6577e80fd3 100644
+--- a/components/client_hints/browser/client_hints.cc
++++ b/components/client_hints/browser/client_hints.cc
+@@ -147,7 +147,30 @@ bool ClientHints::IsJavaScriptAllowed(const GURL& url,
+ }
+ 
+ blink::UserAgentMetadata ClientHints::GetUserAgentMetadata() {
+-  return embedder_support::GetUserAgentMetadata();
++  // Neph (24.10.2026, Opus 5.5): Chrome's brand in the list, as Chrome sends
++  // it; without it Google shows its "Switch to Chrome" promotion
++  // (scripts/chromium-patches/chrome_brand_patch.py).
++  blink::UserAgentMetadata metadata = embedder_support::GetUserAgentMetadata();
++  ([](blink::UserAgentMetadata& metadata) {
++    if (base::CommandLine::ForCurrentProcess()->HasSwitch("neph-chromium-brand")) {
++      return;
++    }
++    for (blink::UserAgentBrandList* list :
++         {&metadata.brand_version_list, &metadata.brand_full_version_list}) {
++      bool chrome = false;
++      std::string version;
++      for (const blink::UserAgentBrandVersion& entry : *list) {
++        chrome = chrome || entry.brand == "Google Chrome";
++        if (entry.brand == "Chromium") {
++          version = entry.version;
++        }
++      }
++      if (!chrome && !version.empty()) {
++        list->emplace_back("Google Chrome", version);
++      }
++    }
++  })(metadata);
++  return metadata;
+ }
+ 
+ void ClientHints::PersistClientHints(
 diff --git a/components/password_manager/core/browser/password_store/login_database.cc b/components/password_manager/core/browser/password_store/login_database.cc
-index f650628393a4e..0a8740bccad70 100644
+index 324c3fe13daf3..41df5dd267340 100644
 --- a/components/password_manager/core/browser/password_store/login_database.cc
 +++ b/components/password_manager/core/browser/password_store/login_database.cc
-@@ -59,6 +59,22 @@
+@@ -63,6 +63,22 @@
  #include "sql/sqlite_result_code_values.h"
  #include "sql/statement.h"
  #include "sql/transaction.h"
@@ -332,7 +598,7 @@ index f650628393a4e..0a8740bccad70 100644
  #include "third_party/abseil-cpp/absl/cleanup/cleanup.h"
  #include "third_party/re2/src/re2/re2.h"
  #include "url/origin.h"
-@@ -1063,6 +1079,84 @@ bool ShouldDeleteUndecryptablePasswords(
+@@ -1070,6 +1086,84 @@ bool ShouldDeleteUndecryptablePasswords(
  
  }  // namespace
  
@@ -416,8 +682,8 @@ index f650628393a4e..0a8740bccad70 100644
 +
  struct LoginDatabase::PrimaryKeyAndPassword {
    int primary_key;
-   std::u16string decrypted_password;
-@@ -1079,12 +1173,15 @@ LoginDatabase::LoginDatabase(const base::FilePath& db_path,
+   PasswordString decrypted_password;
+@@ -1086,17 +1180,19 @@ LoginDatabase::LoginDatabase(const base::FilePath& db_path,
            /*tag=*/"Passwords"),
        is_deleting_undecryptable_logins_enabled_by_policy_(can_delete) {}
  
@@ -426,7 +692,25 @@ index f650628393a4e..0a8740bccad70 100644
 +  NephUnregisterDatabase(this);
 +}
  
- bool LoginDatabase::Init(
+ EncryptionResult LoginDatabase::EncryptedString(
+     const crypto::SecureU16String& plain_text,
+     std::string* cipher_text) const {
+-  std::string plain_text_utf8 = base::UTF16ToUTF8(plain_text);
+-  bool result =
+-      encryptor_ && encryptor_->EncryptString(plain_text_utf8, cipher_text);
+-  crypto::SecureZeroBuffer(base::as_writable_byte_span(plain_text_utf8));
+-  return result ? EncryptionResult::kSuccess
+-                : EncryptionResult::kServiceFailure;
++  // Neph vault (Chromium 156): the same way as the u16string overload, through
++  // the vault's hooks - never the OS key.
++  std::u16string plain(plain_text.data(), plain_text.size());
++  const EncryptionResult result = EncryptedString(plain, cipher_text);
++  crypto::SecureZeroBuffer(base::as_writable_byte_span(plain));
++  return result;
+ }
+ 
+ bool LoginDatabase::DecryptStringToPasswordString(
+@@ -1119,6 +1215,7 @@ bool LoginDatabase::Init(
      OnUndecryptablePasswordsRemoved on_undecryptable_passwords_removed,
      scoped_refptr<os_crypt_async::Encryptor> encryptor) {
    TRACE_EVENT0("passwords", "LoginDatabase::Init");
@@ -434,7 +718,7 @@ index f650628393a4e..0a8740bccad70 100644
    on_undecryptable_passwords_removed_ =
        std::move(on_undecryptable_passwords_removed);
    encryptor_ = std::move(encryptor);
-@@ -1308,6 +1405,7 @@ void LoginDatabase::ReportMetrics() {
+@@ -1342,6 +1439,7 @@ void LoginDatabase::ReportMetrics() {
  PasswordStoreChangeList LoginDatabase::AddLogin(StoredCredential cred,
                                                  AddCredentialError* error) {
    TRACE_EVENT0("passwords", "LoginDatabase::AddLogin");
@@ -442,7 +726,7 @@ index f650628393a4e..0a8740bccad70 100644
    if (error) {
      *error = AddCredentialError::kNone;
    }
-@@ -1416,6 +1514,7 @@ PasswordStoreChangeList LoginDatabase::UpdateLogin(
+@@ -1450,6 +1548,7 @@ PasswordStoreChangeList LoginDatabase::UpdateLogin(
      const StoredCredential& cred,
      UpdateCredentialError* error) {
    TRACE_EVENT0("passwords", "LoginDatabase::UpdateLogin");
@@ -450,7 +734,7 @@ index f650628393a4e..0a8740bccad70 100644
    if (error) {
      *error = UpdateCredentialError::kNone;
    }
-@@ -1745,6 +1844,7 @@ bool LoginDatabase::GetLogins(const PasswordFormDigest& form,
+@@ -1779,6 +1878,7 @@ bool LoginDatabase::GetLogins(const PasswordFormDigest& form,
                                bool should_PSL_matching_apply,
                                std::vector<StoredCredential>* credentials) {
    TRACE_EVENT0("passwords", "LoginDatabase::GetLogins");
@@ -458,7 +742,7 @@ index f650628393a4e..0a8740bccad70 100644
    CHECK(credentials);
    credentials->clear();
  
-@@ -1898,7 +1998,9 @@ DatabaseCleanupResult LoginDatabase::DeleteUndecryptableLogins() {
+@@ -1932,7 +2032,9 @@ DatabaseCleanupResult LoginDatabase::DeleteUndecryptableLogins() {
    TRACE_EVENT0("passwords", "LoginDatabase::DeleteUndecryptableLogins");
    // If the Keychain in MacOS or the real secret key in Linux is unavailable,
    // don't delete any logins.
@@ -469,7 +753,7 @@ index f650628393a4e..0a8740bccad70 100644
      metrics_util::LogDeleteUndecryptableLoginsReturnValue(
          metrics_util::DeleteCorruptedPasswordsResult::kEncryptionUnavailable);
      return DatabaseCleanupResult::kEncryptionUnavailable;
-@@ -2372,4 +2474,209 @@ bool LoginDatabase::UpdatePasswordNotes(
+@@ -2408,4 +2510,209 @@ bool LoginDatabase::UpdatePasswordNotes(
    return true;
  }
  
@@ -680,7 +964,7 @@ index f650628393a4e..0a8740bccad70 100644
 +  password_manager::NephStartMaintenance(true, done, context);
 +}
 diff --git a/components/password_manager/core/browser/password_store/login_database.h b/components/password_manager/core/browser/password_store/login_database.h
-index 4dd8d3fc61bba..385c1b8fd1851 100644
+index e383dcbf70569..8455455bf7589 100644
 --- a/components/password_manager/core/browser/password_store/login_database.h
 +++ b/components/password_manager/core/browser/password_store/login_database.h
 @@ -188,6 +188,12 @@ class LoginDatabase : public EncryptDecryptInterface {
@@ -697,10 +981,10 @@ index 4dd8d3fc61bba..385c1b8fd1851 100644
    // begin, rollback and commit transactions. They delegate to the transaction
    // support of the underlying database. Only one transaction may exist at a
 diff --git a/components/password_manager/core/browser/password_store/login_database_mac.cc b/components/password_manager/core/browser/password_store/login_database_mac.cc
-index acf01bdd66a3b..7ccc9d6d8af81 100644
+index cd379eb6e59b9..b93990f478f30 100644
 --- a/components/password_manager/core/browser/password_store/login_database_mac.cc
 +++ b/components/password_manager/core/browser/password_store/login_database_mac.cc
-@@ -2,26 +2,156 @@
+@@ -2,35 +2,180 @@
  // Use of this source code is governed by a BSD-style license that can be
  // found in the LICENSE file.
  
@@ -713,7 +997,8 @@ index acf01bdd66a3b..7ccc9d6d8af81 100644
 +// holds the same ABI on the host side.
 +
  #include "components/password_manager/core/browser/password_store/login_database.h"
- 
++#include "components/password_manager/core/browser/password_string.h"
++
 +#include <string.h>
 +
 +#include <atomic>
@@ -722,9 +1007,9 @@ index acf01bdd66a3b..7ccc9d6d8af81 100644
 +#include <string>
 +#include <string_view>
 +#include <vector>
-+
+ 
 +#include "base/strings/string_util.h"
-+#include "base/strings/utf_string_conversions.h"
+ #include "base/strings/utf_string_conversions.h"
  #include "components/os_crypt/async/common/encryptor.h"
  
 +extern "C" {
@@ -765,6 +1050,13 @@ index acf01bdd66a3b..7ccc9d6d8af81 100644
 +  if (!bytes.empty()) {
 +    volatile uint8_t* p = bytes.data();
 +    for (size_t i = 0; i < bytes.size(); ++i) p[i] = 0;
++  }
++}
++
++void NephWipe(std::u16string& text) {
++  volatile char16_t* p = text.data();
++  for (size_t i = 0; i < text.size(); ++i) {
++    p[i] = 0;
 +  }
 +}
 +
@@ -862,12 +1154,32 @@ index acf01bdd66a3b..7ccc9d6d8af81 100644
 +  return EncryptionResult::kServiceFailure;
  }
  
++
+ EncryptionResult LoginDatabase::DecryptedString(
+     const std::string& cipher_text,
+     PasswordString* decrypted_text) const {
+-  return DecryptStringToPasswordString(cipher_text, decrypted_text)
+-             ? EncryptionResult::kSuccess
+-             : EncryptionResult::kServiceFailure;
++  // Neph vault: the same way as the u16string overload above, through the
++  // vault's hooks; the plain text lives only until it is wrapped.
++  std::u16string plain;
++  const EncryptionResult result = DecryptedString(cipher_text, &plain);
++  if (result == EncryptionResult::kSuccess) {
++    *decrypted_text = PasswordString(std::move(plain));
++  } else {
++    *decrypted_text = PasswordString();
++  }
++  NephWipe(plain);
++  return result;
+ }
+-
  }  // namespace password_manager
 diff --git a/components/password_manager/core/browser/password_store/login_database_win.cc b/components/password_manager/core/browser/password_store/login_database_win.cc
-index 4c3483ac44bbe..3190e5e4bcf38 100644
+index f8a056cec9709..26d24a5b3c265 100644
 --- a/components/password_manager/core/browser/password_store/login_database_win.cc
 +++ b/components/password_manager/core/browser/password_store/login_database_win.cc
-@@ -2,20 +2,111 @@
+@@ -2,21 +2,119 @@
  // Use of this source code is governed by a BSD-style license that can be
  // found in the LICENSE file.
  
@@ -880,17 +1192,18 @@ index 4c3483ac44bbe..3190e5e4bcf38 100644
 +// holds the same ABI on the host side.
 +
  #include "components/password_manager/core/browser/password_store/login_database.h"
- 
-+#include <windows.h>
++#include "components/password_manager/core/browser/password_string.h"
 +
++#include <windows.h>
+ 
 +#include <atomic>
 +#include <cstddef>
 +#include <cstdint>
-+#include <string>
+ #include <string>
 +#include <string_view>
 +#include <vector>
-+
- #include "base/strings/string_util.h"
+ 
++#include "base/strings/string_util.h"
 +#include "base/strings/utf_string_conversions.h"
  #include "components/os_crypt/async/common/encryptor.h"
  
@@ -930,6 +1243,13 @@ index 4c3483ac44bbe..3190e5e4bcf38 100644
 +void NephWipe(std::vector<uint8_t>& bytes) {
 +  if (!bytes.empty()) {
 +    SecureZeroMemory(bytes.data(), bytes.size());
++  }
++}
++
++void NephWipe(std::u16string& text) {
++  volatile char16_t* p = text.data();
++  for (size_t i = 0; i < text.size(); ++i) {
++    p[i] = 0;
 +  }
 +}
 +
@@ -983,7 +1303,7 @@ index 4c3483ac44bbe..3190e5e4bcf38 100644
  }
  
  EncryptionResult LoginDatabase::DecryptedString(
-@@ -35,11 +126,30 @@ EncryptionResult LoginDatabase::DecryptedString(
+@@ -36,34 +134,46 @@ EncryptionResult LoginDatabase::DecryptedString(
      plain_text->clear();
      return EncryptionResult::kSuccess;
    }
@@ -1018,30 +1338,80 @@ index 4c3483ac44bbe..3190e5e4bcf38 100644
 +  return EncryptionResult::kServiceFailure;
  }
  
- }  // namespace password_manager
-diff --git a/components/signin/internal/identity_manager/gaia_cookie_manager_service.cc b/components/signin/internal/identity_manager/gaia_cookie_manager_service.cc
-index db2e0266aa220..68127145f55c6 100644
---- a/components/signin/internal/identity_manager/gaia_cookie_manager_service.cc
-+++ b/components/signin/internal/identity_manager/gaia_cookie_manager_service.cc
-@@ -14,6 +14,7 @@
- #include <utility>
- #include <vector>
- 
-+#include "base/command_line.h"
- #include "base/feature_list.h"
- #include "base/functional/bind.h"
- #include "base/functional/callback.h"
-@@ -525,6 +526,10 @@ GaiaCookieManagerService::GetCachedListAccounts() {
++
+ EncryptionResult LoginDatabase::DecryptedString(
+     const std::string& cipher_text,
+     PasswordString* decrypted_text) const {
+-  // Unittests need to read sample database entries. If these entries had real
+-  // passwords, their encoding would need to be different for every platform.
+-  // To avoid the need for that, the entries have empty passwords.
+-  // os_crypt_async on Windows does not recognise the empty string as a valid
+-  // encrypted string. Changing that for all clients of os_crypt_async could
+-  // have too broad an impact, therefore to allow platform-independent data
+-  // files for LoginDatabase tests, the special handling of the empty string
+-  // is added below instead.
+-  // See also https://codereview.chromium.org/2291123008/#msg14 for a
+-  // discussion.
+-  if (cipher_text.empty()) {
+-    *decrypted_text = {};
+-    return EncryptionResult::kSuccess;
++  // Neph vault: the same way as the u16string overload above, through the
++  // vault's hooks; the plain text lives only until it is wrapped.
++  std::u16string plain;
++  const EncryptionResult result = DecryptedString(cipher_text, &plain);
++  if (result == EncryptionResult::kSuccess) {
++    *decrypted_text = PasswordString(std::move(plain));
++  } else {
++    *decrypted_text = PasswordString();
+   }
+-
+-  return DecryptStringToPasswordString(cipher_text, decrypted_text)
+-             ? EncryptionResult::kSuccess
+-             : EncryptionResult::kServiceFailure;
++  NephWipe(plain);
++  return result;
  }
- 
- void GaiaCookieManagerService::TriggerListAccounts() {
-+  // Neph: no Google sign-in, so no /ListAccounts request either.
-+  if (!base::CommandLine::ForCurrentProcess()->HasSwitch("neph-list-accounts")) {
-+    return;
-+  }
-   // Callers suspect that a check to Gaia needs to be done, don't rely on the
-   // in progress request, conditions might have changed while the request is
-   // in-flight.
+-
+ }  // namespace password_manager
+diff --git a/content/browser/renderer_host/render_process_host_impl.cc b/content/browser/renderer_host/render_process_host_impl.cc
+index 22bf8ff11537d..1d9bfc3be4b2d 100644
+--- a/content/browser/renderer_host/render_process_host_impl.cc
++++ b/content/browser/renderer_host/render_process_host_impl.cc
+@@ -2047,9 +2047,33 @@ bool RenderProcessHostImpl::Init() {
+   uint64_t trace_id = base::Token::CreateRandom().high();
+   TRACE_EVENT("navigation", "RenderProcessHostImpl::Init",
+               perfetto::Flow::Global(trace_id));
++  // Neph (24.10.2026, Opus 5.5): Chrome's brand in the renderer's
++  // user-agent metadata too (navigator.userAgentData, the renderer's own
++  // requests; scripts/chromium-patches/chrome_brand_patch.py).
++  blink::UserAgentMetadata neph_ua_metadata =
++      GetContentClient()->browser()->GetUserAgentMetadata();
++  ([](blink::UserAgentMetadata& metadata) {
++    if (base::CommandLine::ForCurrentProcess()->HasSwitch("neph-chromium-brand")) {
++      return;
++    }
++    for (blink::UserAgentBrandList* list :
++         {&metadata.brand_version_list, &metadata.brand_full_version_list}) {
++      bool chrome = false;
++      std::string version;
++      for (const blink::UserAgentBrandVersion& entry : *list) {
++        chrome = chrome || entry.brand == "Google Chrome";
++        if (entry.brand == "Chromium") {
++          version = entry.version;
++        }
++      }
++      if (!chrome && !version.empty()) {
++        list->emplace_back("Google Chrome", version);
++      }
++    }
++  })(neph_ua_metadata);
+   GetRendererInterface()->InitializeRenderer(
+       GetContentClient()->browser()->GetUserAgent(),
+-      GetContentClient()->browser()->GetUserAgentMetadata(),
++      neph_ua_metadata,
+       storage_partition_impl_->cors_exempt_header_list(),
+       GetContentClient()->browser()->GetOriginTrialsSettings(), cpu_tier,
+       trace_id);
 diff --git a/extensions/browser/manifest_v2_handler.cc b/extensions/browser/manifest_v2_handler.cc
 index 5841d3dfbc888..32fef85bd4bfa 100644
 --- a/extensions/browser/manifest_v2_handler.cc
@@ -1056,7 +1426,7 @@ index 5841d3dfbc888..32fef85bd4bfa 100644
  // Returns the suffix to use for histograms related to the manifest location
  // grouping.
 diff --git a/gpu/config/gpu_preferences.h b/gpu/config/gpu_preferences.h
-index 841774d3e54a2..101780a8ac518 100644
+index 4bbab25f03364..2d0855c55dd83 100644
 --- a/gpu/config/gpu_preferences.h
 +++ b/gpu/config/gpu_preferences.h
 @@ -23,7 +23,7 @@ namespace gpu {
@@ -1069,13 +1439,13 @@ index 841774d3e54a2..101780a8ac518 100644
  const size_t kDefaultMaxProgramCacheMemoryBytes = 2 * 1024 * 1024;
  const size_t kLowEndMaxProgramCacheMemoryBytes = 128 * 1024;
 diff --git a/gpu/ipc/service/command_buffer_stub.cc b/gpu/ipc/service/command_buffer_stub.cc
-index 67abe9533c4c2..54fd3176362d1 100644
+index a8dc0b43948ea..dcc5dac94fdab 100644
 --- a/gpu/ipc/service/command_buffer_stub.cc
 +++ b/gpu/ipc/service/command_buffer_stub.cc
-@@ -198,10 +198,12 @@ void CommandBufferStub::PerformWork() {
-   // TODO(sunnyps): Should this use ScopedCrashKey instead?
-   crash_keys::gpu_gl_context_is_virtual.Set(use_virtualized_gl_context_ ? "1"
-                                                                         : "0");
+@@ -195,10 +195,12 @@ void CommandBufferStub::PerformWork() {
+   TRACE_EVENT0("gpu", "CommandBufferStub::PerformWork");
+   UpdateActiveUrl();
+ 
 -  if (decoder_context_.get() && !MakeCurrent())
 -    return;
 +  // Neph: the cache scope before MakeCurrent(), which processes the pending
@@ -1087,7 +1457,7 @@ index 67abe9533c4c2..54fd3176362d1 100644
  
    if (decoder_context_) {
      uint32_t current_unprocessed_num =
-@@ -757,9 +759,14 @@ CommandBufferStub::ScopedContextOperation::ScopedContextOperation(
+@@ -751,9 +753,14 @@ CommandBufferStub::ScopedContextOperation::ScopedContextOperation(
      CommandBufferStub& stub)
      : stub_(stub) {
    stub_.UpdateActiveUrl();
@@ -1105,10 +1475,10 @@ index 67abe9533c4c2..54fd3176362d1 100644
  }
  
 diff --git a/media/BUILD.gn b/media/BUILD.gn
-index 5c60f7e0807c8..d1f2e8cc07065 100644
+index 1919962dd18cf..2fc1d030ecaca 100644
 --- a/media/BUILD.gn
 +++ b/media/BUILD.gn
-@@ -86,11 +86,10 @@ buildflag_header("media_buildflags") {
+@@ -87,11 +87,10 @@ buildflag_header("media_buildflags") {
    }
  }
  
@@ -1125,10 +1495,10 @@ index 5c60f7e0807c8..d1f2e8cc07065 100644
  # Common configuration for targets in the media directory; these must not be
  # exported since things like USE_NEON have different meanings elsewhere in the
 diff --git a/media/ffmpeg/ffmpeg_common.cc b/media/ffmpeg/ffmpeg_common.cc
-index 280dce68853c1..3be73dbf9efce 100644
+index 1eeaafafaf779..e6f9718d17432 100644
 --- a/media/ffmpeg/ffmpeg_common.cc
 +++ b/media/ffmpeg/ffmpeg_common.cc
-@@ -416,6 +416,15 @@ bool AVCodecContextToAudioDecoderConfig(const AVCodecContext* codec_context,
+@@ -410,6 +410,15 @@ bool AVCodecContextToAudioDecoderConfig(const AVCodecContext* codec_context,
        break;
  #endif
  
@@ -1145,7 +1515,7 @@ index 280dce68853c1..3be73dbf9efce 100644
        break;
    }
 diff --git a/media/filters/mac/audio_toolbox_audio_decoder.cc b/media/filters/mac/audio_toolbox_audio_decoder.cc
-index 03d630b07fc9e..1343434ef2a44 100644
+index 03c8cf1b0eaaf..6ad7fb99a2491 100644
 --- a/media/filters/mac/audio_toolbox_audio_decoder.cc
 +++ b/media/filters/mac/audio_toolbox_audio_decoder.cc
 @@ -24,6 +24,7 @@
@@ -1367,7 +1737,7 @@ index 1d1ec8a5dbba2..147537c97ab3b 100644
      audio_configs.emplace_back(AudioCodec::kAC3, AudioCodecProfile::kUnknown);
      audio_configs.emplace_back(AudioCodec::kEAC3, AudioCodecProfile::kUnknown);
 diff --git a/media/mojo/services/gpu_mojo_media_client_win.cc b/media/mojo/services/gpu_mojo_media_client_win.cc
-index 8a4f1b8c47296..2e2a4f5f03fc4 100644
+index 9716800e49755..8cd7bb66ea5e6 100644
 --- a/media/mojo/services/gpu_mojo_media_client_win.cc
 +++ b/media/mojo/services/gpu_mojo_media_client_win.cc
 @@ -101,9 +101,14 @@ class GpuMojoMediaClientWin final : public GpuMojoMediaClient {
@@ -1471,10 +1841,10 @@ index 20e2e2b4a0919..6aa8c38456208 100644
                           SkFloatToScalar(radius), flags);
  }
 diff --git a/ui/views/background.cc b/ui/views/background.cc
-index c06bc6c337772..2a5bded0d7fd7 100644
+index 8f068df1a88a2..ac691ebd9c99e 100644
 --- a/ui/views/background.cc
 +++ b/ui/views/background.cc
-@@ -34,6 +34,48 @@
+@@ -35,6 +35,48 @@
  #include "skia/ext/skia_utils_win.h"
  #endif
  
@@ -1523,17 +1893,17 @@ index c06bc6c337772..2a5bded0d7fd7 100644
  namespace views {
  
  DEFINE_SAFE_CAST_TARGET(Background)
-@@ -81,7 +123,7 @@ class RoundedRectBackground : public Background {
-                                {radii_.lower_right(), radii_.lower_right()},
-                                {radii_.lower_left(),  radii_.lower_left()}};
-     const SkPath path =
--        SkPath::RRect(SkRRect::MakeRectRadii(gfx::RectToSkRect(rect), radii));
-+        NephBevel(SkRRect::MakeRectRadii(gfx::RectToSkRect(rect), radii));
+@@ -80,7 +122,7 @@ class RoundedRectBackground : public Background {
+ 
+     const gfx::RoundedCornersF radii = radii_.value_or(
+         gfx::RoundedCornersF(std::min(bounds.width(), bounds.height()) / 2.0f));
+-    const SkPath path = SkPath::RRect(gfx::RoundedRectToSkRRect(bounds, radii));
++    const SkPath path = NephBevel(gfx::RoundedRectToSkRRect(bounds, radii));
  
      cc::PaintFlags flags;
      flags.setAntiAlias(true);
 diff --git a/ui/views/bubble/bubble_border.cc b/ui/views/bubble/bubble_border.cc
-index 5bb35cf1f90eb..1a34024c865e7 100644
+index 46de720450dbf..0b179f97f4218 100644
 --- a/ui/views/bubble/bubble_border.cc
 +++ b/ui/views/bubble/bubble_border.cc
 @@ -39,6 +39,48 @@
@@ -1585,7 +1955,7 @@ index 5bb35cf1f90eb..1a34024c865e7 100644
  namespace views {
  
  namespace {
-@@ -451,11 +493,17 @@ void BubbleBorder::Paint(const views::View& view, gfx::Canvas* canvas) {
+@@ -452,11 +494,17 @@ void BubbleBorder::Paint(const views::View& view, gfx::Canvas* canvas) {
  
    gfx::ScopedCanvas scoped(canvas);
    SkRRect r_rect = GetClientRect(view);
@@ -1608,7 +1978,7 @@ index 5bb35cf1f90eb..1a34024c865e7 100644
  
    if (visible_arrow_) {
      PaintVisibleArrow(view, canvas);
-@@ -689,8 +737,8 @@ bool BubbleBorder::ShouldDrawStroke() const {
+@@ -690,8 +738,8 @@ bool BubbleBorder::ShouldDrawStroke() const {
  
  void BubbleBorder::PaintNoShadow(const View& view, gfx::Canvas* canvas) {
    gfx::ScopedCanvas scoped(canvas);
@@ -1619,7 +1989,7 @@ index 5bb35cf1f90eb..1a34024c865e7 100644
    canvas->sk_canvas()->drawColor(SkColors::kTransparent, SkBlendMode::kSrc);
  }
  
-@@ -747,8 +795,9 @@ void BubbleBackground::Paint(gfx::Canvas* canvas, views::View* view) const {
+@@ -748,8 +796,9 @@ void BubbleBackground::Paint(gfx::Canvas* canvas, views::View* view) const {
    gfx::RectF bounds(view->GetLocalBounds());
    bounds.Inset(gfx::InsetsF(border_->GetInsets()));
  
@@ -1632,10 +2002,10 @@ index 5bb35cf1f90eb..1a34024c865e7 100644
  
  }  // namespace views
 diff --git a/ui/views/bubble/bubble_frame_view.cc b/ui/views/bubble/bubble_frame_view.cc
-index 15bdfd36473dd..16ddec4d6d7a9 100644
+index d576b8a33de6f..1607af22ea7c7 100644
 --- a/ui/views/bubble/bubble_frame_view.cc
 +++ b/ui/views/bubble/bubble_frame_view.cc
-@@ -63,6 +63,48 @@
+@@ -64,6 +64,48 @@
  #include "ui/ozone/public/ozone_platform.h"
  #endif
  
@@ -1684,24 +2054,24 @@ index 15bdfd36473dd..16ddec4d6d7a9 100644
  namespace views {
  
  namespace {
-@@ -256,7 +298,7 @@ bool BubbleFrameView::GetClientMask(const gfx::Size& size, SkPath* path) const {
-       {corner_radii.upper_right(), corner_radii.upper_right()},
-       {corner_radii.lower_right(), corner_radii.lower_right()},
-       {corner_radii.lower_left(),  corner_radii.lower_left()}};
--  *path = SkPath::RRect(SkRRect::MakeRectRadii(
-+  *path = NephBevel(SkRRect::MakeRectRadii(
-       SkRect::MakeIWH(size.width(), size.height()), radii));
+@@ -255,7 +297,7 @@ bool BubbleFrameView::GetClientMask(const gfx::Size& size, SkPath* path) const {
+   }
+ 
+   *path =
+-      SkPath::RRect(gfx::RoundedRectToSkRRect(gfx::Rect(size), corner_radii));
++      NephBevel(gfx::RoundedRectToSkRRect(gfx::Rect(size), corner_radii));
    return true;
  }
-@@ -341,7 +383,7 @@ void BubbleFrameView::GetWindowMask(const gfx::Size& size,
-                       {border_radii.upper_right(), border_radii.upper_right()},
-                       {border_radii.lower_right(), border_radii.lower_right()},
-                       {border_radii.lower_left(),  border_radii.lower_left()}};
--    *window_mask = SkPath::RRect(SkRRect::MakeRectRadii(rect, radii));
-+    *window_mask = NephBevel(SkRRect::MakeRectRadii(rect, radii));
+ 
+@@ -335,7 +377,7 @@ void BubbleFrameView::GetWindowMask(const gfx::Size& size,
+                     kBorderStrokeSize)};
+ 
+   if (bubble_border_->shadow() == BubbleBorder::NO_SHADOW) {
+-    *window_mask = SkPath::RRect(
++    *window_mask = NephBevel(
+         gfx::RoundedRectFToSkRRect(gfx::SkRectToRectF(rect), border_radii));
    } else {
      static const int kBottomBorderShadowSize = 2;
-     rect.fBottom += SkIntToScalar(kBottomBorderShadowSize);
 diff --git a/ui/views/controls/highlight_path_generator.cc b/ui/views/controls/highlight_path_generator.cc
 index b805a1aa32d12..a82b9a2fd8255 100644
 --- a/ui/views/controls/highlight_path_generator.cc
@@ -1812,10 +2182,10 @@ index d243aa338748a..6f984b790d424 100644
        return 0;
    }
 diff --git a/ui/views/painter.cc b/ui/views/painter.cc
-index 967adcc60bde5..9ef7e174067e3 100644
+index 5390e61475219..8c7861fa6dc19 100644
 --- a/ui/views/painter.cc
 +++ b/ui/views/painter.cc
-@@ -23,6 +23,48 @@
+@@ -24,6 +24,48 @@
  #include "ui/gfx/scoped_canvas.h"
  #include "ui/views/view.h"
  
@@ -1864,21 +2234,21 @@ index 967adcc60bde5..9ef7e174067e3 100644
  namespace views {
  
  namespace {
-@@ -103,7 +145,7 @@ void SolidRoundRectPainter::Paint(gfx::Canvas* canvas, const gfx::Size& size) {
-        {radii_.lower_right() * scale, radii_.lower_right() * scale},
-        {radii_.lower_left() * scale, radii_.lower_left() * scale}}};
- 
--  const SkPath fill_path = SkPath::RRect(SkRRect::MakeRectRadii(
-+  const SkPath fill_path = NephBevel(SkRRect::MakeRectRadii(
-       gfx::RectFToSkRect(fill_rect), scaled_radii.data()));
+@@ -101,7 +143,7 @@ void SolidRoundRectPainter::Paint(gfx::Canvas* canvas, const gfx::Size& size) {
+   const gfx::RoundedCornersF scaled_radii =
+       gfx::ScaleRoundedCorners(radii_, scale);
+   const SkPath fill_path =
+-      SkPath::RRect(gfx::RoundedRectFToSkRRect(fill_rect, scaled_radii));
++      NephBevel(gfx::RoundedRectFToSkRRect(fill_rect, scaled_radii));
    canvas->DrawPath(fill_path, flags);
  
-@@ -121,7 +163,7 @@ void SolidRoundRectPainter::Paint(gfx::Canvas* canvas, const gfx::Size& size) {
-           scaled_radii[i] - SkVector{stroke_width / 2, stroke_width / 2};
-     }
+   if (stroke_color_ != SK_ColorTRANSPARENT) {
+@@ -119,7 +161,7 @@ void SolidRoundRectPainter::Paint(gfx::Canvas* canvas, const gfx::Size& size) {
+                        stroke_corners.lower_left() - stroke_inset);
  
--    const SkPath stroke_path = SkPath::RRect(SkRRect::MakeRectRadii(
-+    const SkPath stroke_path = NephBevel(SkRRect::MakeRectRadii(
-         gfx::RectFToSkRect(stroke_rect), stroke_radii.data()));
+     const SkPath stroke_path =
+-        SkPath::RRect(gfx::RoundedRectFToSkRRect(stroke_rect, stroke_corners));
++        NephBevel(gfx::RoundedRectFToSkRRect(stroke_rect, stroke_corners));
      canvas->DrawPath(stroke_path, flags);
    }
+ }

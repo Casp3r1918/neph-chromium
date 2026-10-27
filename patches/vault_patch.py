@@ -117,6 +117,13 @@ void NephWipe(std::vector<uint8_t>& bytes) {
   }
 }
 
+void NephWipe(std::u16string& text) {
+  volatile char16_t* p = text.data();
+  for (size_t i = 0; i < text.size(); ++i) {
+    p[i] = 0;
+  }
+}
+
 }  // namespace
 
 extern "C" __declspec(dllexport) void neph_vault_set_hooks(
@@ -206,6 +213,69 @@ EncryptionResult LoginDatabase::DecryptedString(
 }
 
 }  // namespace password_manager
+'''
+
+# Chromium 156 (27.10.2026, Fable 5.1): the store reads passwords through a
+# PasswordString overload of DecryptedString, declared per platform; without a
+# definition libcef.dll does not link (the first 156 build stopped at its very
+# last step). It takes the same way as the u16string overload, through the
+# vault's hooks. Only where the header declares it (152 does not).
+PASSWORD_STRING_DECL = 'PasswordString* plain_text) const override;'
+PASSWORD_STRING_INCLUDE = '#include "components/password_manager/core/browser/password_string.h"\n'
+PASSWORD_STRING_BODY = r'''
+EncryptionResult LoginDatabase::DecryptedString(
+    const std::string& cipher_text,
+    PasswordString* decrypted_text) const {
+  // Neph vault: the same way as the u16string overload above, through the
+  // vault's hooks; the plain text lives only until it is wrapped.
+  std::u16string plain;
+  const EncryptionResult result = DecryptedString(cipher_text, &plain);
+  if (result == EncryptionResult::kSuccess) {
+    *decrypted_text = PasswordString(std::move(plain));
+  } else {
+    *decrypted_text = PasswordString();
+  }
+  NephWipe(plain);
+  return result;
+}
+'''
+NAMESPACE_CLOSE = '}  // namespace password_manager\n'
+LOGIN_DATABASE_INCLUDE = '#include "components/password_manager/core/browser/password_store/login_database.h"\n'
+
+
+def with_password_string(body, pristine_header):
+    """The platform body with the PasswordString overload, where the header declares it."""
+    if PASSWORD_STRING_DECL not in pristine_header:
+        return body
+    assert body.count(NAMESPACE_CLOSE) == 1 and body.count(LOGIN_DATABASE_INCLUDE) == 1
+    body = body.replace(LOGIN_DATABASE_INCLUDE, LOGIN_DATABASE_INCLUDE + PASSWORD_STRING_INCLUDE, 1)
+    return body.replace(NAMESPACE_CLOSE, PASSWORD_STRING_BODY + NAMESPACE_CLOSE, 1)
+
+
+# Chromium 156 saves passwords through EncryptedString(const crypto::SecureU16String&),
+# which upstream defines in login_database.cc straight on the OS key - past the
+# vault. It goes the vault's way too (27.10.2026, Fable 5.1); 152 has no such overload.
+CC_SECURE_ENCRYPT_OLD = '''EncryptionResult LoginDatabase::EncryptedString(
+    const crypto::SecureU16String& plain_text,
+    std::string* cipher_text) const {
+  std::string plain_text_utf8 = base::UTF16ToUTF8(plain_text);
+  bool result =
+      encryptor_ && encryptor_->EncryptString(plain_text_utf8, cipher_text);
+  crypto::SecureZeroBuffer(base::as_writable_byte_span(plain_text_utf8));
+  return result ? EncryptionResult::kSuccess
+                : EncryptionResult::kServiceFailure;
+}
+'''
+CC_SECURE_ENCRYPT_NEW = '''EncryptionResult LoginDatabase::EncryptedString(
+    const crypto::SecureU16String& plain_text,
+    std::string* cipher_text) const {
+  // Neph vault (Chromium 156): the same way as the u16string overload, through
+  // the vault's hooks - never the OS key.
+  std::u16string plain(plain_text.data(), plain_text.size());
+  const EncryptionResult result = EncryptedString(plain, cipher_text);
+  crypto::SecureZeroBuffer(base::as_writable_byte_span(plain));
+  return result;
+}
 '''
 
 # The Mac file: no windows.h, a volatile wipe (memset_s is not declared without __STDC_WANT_LIB_EXT1__; 13.10.2026, Opus 5.5), the framework's export
@@ -555,7 +625,7 @@ def build(pristine):
     header = '\n'.join(win.split('\n')[:3])
     if not header.startswith('// Copyright'):
         raise AnchorMissing(WIN_FILE + ': copyright header')
-    out[WIN_FILE] = header + '\n' + WIN_BODY
+    out[WIN_FILE] = header + '\n' + with_password_string(WIN_BODY, pristine[H_FILE])
 
     mac = pristine[MAC_FILE]
     for needle in ('encryptor_->EncryptString16(plain_text, cipher_text)',
@@ -565,9 +635,13 @@ def build(pristine):
     mac_header = '\n'.join(mac.split('\n')[:3])
     if not mac_header.startswith('// Copyright'):
         raise AnchorMissing(MAC_FILE + ': copyright header')
-    out[MAC_FILE] = mac_header + '\n' + MAC_BODY
+    out[MAC_FILE] = mac_header + '\n' + with_password_string(MAC_BODY, pristine[H_FILE])
 
     cc = pristine[CC_FILE]
+    if CC_SECURE_ENCRYPT_OLD in cc:
+        cc = replace_once(cc, CC_SECURE_ENCRYPT_OLD, CC_SECURE_ENCRYPT_NEW, 'login_database.cc EncryptedString(SecureU16String)')
+    elif 'const crypto::SecureU16String& plain_text,' in cc:
+        raise AnchorMissing('login_database.cc: EncryptedString(SecureU16String) has changed; the vault must stay in that path')
     cc = replace_once(cc, '#include "sql/transaction.h"\n', CC_INCLUDES, 'login_database.cc includes')
     cc = replace_once(cc, 'struct LoginDatabase::PrimaryKeyAndPassword {', CC_HELPERS, 'login_database.cc PrimaryKeyAndPassword')
     cc = replace_once(cc, 'LoginDatabase::~LoginDatabase() = default;', CC_DTOR_NEW, 'login_database.cc destructor')
