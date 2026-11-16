@@ -12,15 +12,15 @@ verwenden möchte, erhält die Dateien vom Herausgeber auf Anfrage als Archiv.
 every modification Neph applies, and the build instructions. Valid for at least three years after each release;
 available as an archive on request.*
 
-## Aktuelle Version: Neph 0.4.21 (2026-11-11)
+## Aktuelle Version: Neph 0.4.22 (2026-11-16)
 
 | Bestandteil | Stand | Quelle |
 |---|---|---|
-| Chromium | `156.0.8078.88` (Commit `8954d1854371`) | https://chromium.googlesource.com/chromium/src/+/refs/tags/156.0.8078.88 |
-| CEF | `156.0.27+ga10dae3+chromium-156.0.8078.88` (Branch 8078, Commit `a10dae3`) | https://github.com/chromiumembedded/cef/commit/a10dae3 |
+| Chromium | `156.0.8078.96` (Commit `2ad9b7f5a868`) | https://chromium.googlesource.com/chromium/src/+/refs/tags/156.0.8078.96 |
+| CEF | `156.0.30+g6028375+chromium-156.0.8078.96` (Branch 8078, Commit `6028375`) | https://github.com/chromiumembedded/cef/commit/6028375 |
 | ffmpeg (`third_party/ffmpeg`) | `9db86ce5b5b4` | https://chromium.googlesource.com/chromium/third_party/ffmpeg/+/9db86ce5b5b454dfc96c435f9f0723012980c37f |
-| ANGLE (`third_party/angle`) | `a66226b1d3c0` | https://chromium.googlesource.com/angle/angle/+/a66226b1d3c023ad3ff2c82a6782ba464629f27c |
-| Nephs Änderungen | `patches/` | dieses Repository, Tag `neph-v0.4.21` |
+| ANGLE (`third_party/angle`) | `f10470c77e48` | https://chromium.googlesource.com/angle/angle/+/f10470c77e4810ece55cbe8e08469a31610e92f4 |
+| Nephs Änderungen | `patches/` | dieses Repository, Tag `neph-v0.4.22` |
 | GN-Argumente | `build/GN_DEFINES.txt`, `build/args.gn` | dieses Repository |
 
 Alle weiteren Abhängigkeiten (DEPS) ergeben sich aus dem Chromium-Tag; `gclient sync` stellt sie exakt wieder her.

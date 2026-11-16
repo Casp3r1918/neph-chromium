@@ -95791,7 +95791,7 @@ index 4ea2fb768edad..b5bea95c3f2a8 100644
  </translationbundle>
 \ No newline at end of file
 diff --git a/chrome/app/resources/chromium_strings_sv.xtb b/chrome/app/resources/chromium_strings_sv.xtb
-index 1b17157b32bd9..7033290d01803 100644
+index c586266004a5e..c5c4957bf5926 100644
 --- a/chrome/app/resources/chromium_strings_sv.xtb
 +++ b/chrome/app/resources/chromium_strings_sv.xtb
 @@ -3,571 +3,571 @@
@@ -96561,12 +96561,12 @@ index 1b17157b32bd9..7033290d01803 100644
 +<translation id="4126000185873407386">Logga in i Neph för att få tillgång till detta bokmärke med mera på alla dina enheter</translation>
 +<translation id="4110954293345730450">Gör Neph till din egen</translation>
  <translation id="5960071705175224773">Dina inställningar har ändrats av en okänd app</translation>
- <translation id="5977420883993828287">Fäst! Använd sammanhangsbaserade uppgifter igen från verktygsfältet</translation>
+ <translation id="5977420883993828287">Fäst! Använd Kontextbaserade uppgifter igen från verktygsfältet</translation>
 -<translation id="5986585015444752010">{COUNT,plural, =1{Organisationen avslutar Chromium automatiskt när det inte har använts på 1 minut.}other{Organisationen avslutar Chromium automatiskt när det inte har använts på # minuter.}}</translation>
 -<translation id="5987687638152509985">Du måste uppdatera Chromium innan synkroniseringen kan starta</translation>
 +<translation id="518113757103893179">{COUNT,plural, =1{Organisationen avslutar Neph automatiskt när det inte har använts på 1 minut.}other{Organisationen avslutar Neph automatiskt när det inte har använts på # minuter.}}</translation>
 +<translation id="2882867592410558039">Du måste uppdatera Neph innan synkroniseringen kan starta</translation>
- <translation id="5990360079535151574">Med knappen Sammanhangsbaserade uppgifter i verktygsfältet kan du öppna Sammanhangsbaserade uppgifter igen för att ställa frågor medan du surfar</translation>
+ <translation id="5990360079535151574">Med knappen Kontextbaserade uppgifter i verktygsfältet kan du öppna Kontextbaserade uppgifter igen för att ställa frågor medan du surfar</translation>
  <translation id="6003112304606738118">Laddar ned … <ph name="HOURS" /> timme/timmar kvar</translation>
  <translation id="6009821354356307391">Ställ en följdfråga</translation>
  <translation id="6040143037577758943">Stäng</translation>
@@ -96745,7 +96745,7 @@ index 1b17157b32bd9..7033290d01803 100644
 +<translation id="5632116677464532028">Neph har upptäckt att <ph name="EXTENSION_NAME" /> innehåller skadlig kod</translation>
  <translation id="6877155553248388166">nedre högra hörnet av sökområdet: <ph name="RIGHT" /> % åt höger, <ph name="BOTTOM" /> % nedåt</translation>
  <translation id="6896758677409633944">Kopiera</translation>
- <translation id="6898028264630240901">Du kan fästa Sammanhangsbaserade uppgifter så att du kan ställa frågor medan du surfar</translation>
+ <translation id="6898028264630240901">Du kan fästa Kontextbaserade uppgifter så att du kan ställa frågor medan du surfar</translation>
 -<translation id="6901631050894301805">Ställ in Chromium som standardwebbläsare och fäst den på aktivitetsfältet</translation>
 -<translation id="6909503629704372277">&amp;Hantera Chromium-profiler</translation>
 -<translation id="6919942714452658456">Den här åtgärden kommer att
@@ -96826,7 +96826,7 @@ index 1b17157b32bd9..7033290d01803 100644
  
 -Chromium kan inte återställa dina inställningar.</translation>
 +Neph kan inte återställa dina inställningar.</translation>
- <translation id="7324051657739063017">Du kan öppna Sammanhangsbaserade uppgifter igen för att ställa frågor medan du surfar</translation>
+ <translation id="7324051657739063017">Du kan öppna Kontextbaserade uppgifter igen för att ställa frågor medan du surfar</translation>
 -<translation id="734373864078049451">Här finns webben, bokmärken och allt annat du använder Chromium till.</translation>
 -<translation id="7347827960336370838">Din krypterade data kan endast läsas av en person som har din lösenfras. Lösenfrasen varken skickas till eller lagras av Google. Om du glömmer lösenfrasen eller vill ändra den här inställningen måste du <ph name="BEGIN_LINK" />radera Chromium-datan i kontot<ph name="END_LINK" />.</translation>
 -<translation id="7349591376906416160">Systemadministratören har konfigurerat Chromium så att <ph name="TARGET_URL_HOSTNAME" /> öppnas i <ph name="ALTERNATIVE_BROWSER_NAME" />.</translation>
@@ -115998,7 +115998,7 @@ index 05f6090e38d11..ebc83bc010106 100644
  <translation id="8690129572193755009">Web lokacije mogu zatražiti da upravljaju protokolima</translation>
  <translation id="869144235543261764">Ova kartica reproducira videozapis u načinu rada slike u slici</translation>
 diff --git a/chrome/app/resources/generated_resources_ca.xtb b/chrome/app/resources/generated_resources_ca.xtb
-index bac4e17429162..67e239c6b1efa 100644
+index 0914b2a967dac..439c4b5c3365e 100644
 --- a/chrome/app/resources/generated_resources_ca.xtb
 +++ b/chrome/app/resources/generated_resources_ca.xtb
 @@ -859,7 +859,7 @@ Comprova les contrasenyes sempre que vulguis al <ph name="GOOGLE_PASSWORD_MANAGE
@@ -116656,7 +116656,7 @@ index b7e8c59589cdf..f527b00127a3b 100644
  <translation id="8690129572193755009">Sites can ask to handle protocols</translation>
  <translation id="869144235543261764">This tab is playing a video in picture-in-picture mode</translation>
 diff --git a/chrome/app/resources/generated_resources_es-419.xtb b/chrome/app/resources/generated_resources_es-419.xtb
-index 2b52b50b20cbc..bdc7b54b5cf58 100644
+index 71420d0e67be2..1c2ef79995008 100644
 --- a/chrome/app/resources/generated_resources_es-419.xtb
 +++ b/chrome/app/resources/generated_resources_es-419.xtb
 @@ -859,7 +859,7 @@ Puedes revisar las contraseñas en cualquier momento, en <ph name="GOOGLE_PASSWO
@@ -116750,7 +116750,7 @@ index 2b52b50b20cbc..bdc7b54b5cf58 100644
  <translation id="8690129572193755009">Permitir que los sitios soliciten permiso para procesar protocolos</translation>
  <translation id="869144235543261764">Esta pestaña está reproduciendo un video en el modo de pantalla en pantalla</translation>
 diff --git a/chrome/app/resources/generated_resources_es.xtb b/chrome/app/resources/generated_resources_es.xtb
-index 0e5749f0410f8..bdcabb254bd04 100644
+index 60aeb196d5592..7caa2d24243b8 100644
 --- a/chrome/app/resources/generated_resources_es.xtb
 +++ b/chrome/app/resources/generated_resources_es.xtb
 @@ -859,7 +859,7 @@ Comprueba tus contraseñas en cualquier momento en el <ph name="GOOGLE_PASSWORD_
@@ -117408,7 +117408,7 @@ index 341959be0b14c..11859b420d283 100644
  <translation id="8690129572193755009">Les sites peuvent demander à gérer des protocoles</translation>
  <translation id="869144235543261764">Cet onglet fait jouer une vidéo en mode d'incrustation d'image</translation>
 diff --git a/chrome/app/resources/generated_resources_fr.xtb b/chrome/app/resources/generated_resources_fr.xtb
-index bb6fdd1978141..bab30224228da 100644
+index a13e592205af5..a1c428cd5b81e 100644
 --- a/chrome/app/resources/generated_resources_fr.xtb
 +++ b/chrome/app/resources/generated_resources_fr.xtb
 @@ -859,7 +859,7 @@ Vérifiez vos mots de passe à tout moment dans le <ph name="GOOGLE_PASSWORD_MAN
@@ -118254,7 +118254,7 @@ index 29d4ca4104e43..91c49d639997d 100644
  <translation id="8690129572193755009">Vefsvæði geta beðið um að sjá um samskiptareglur</translation>
  <translation id="869144235543261764">Þessi flipi spilar myndskeið í stillingunni „mynd í mynd“</translation>
 diff --git a/chrome/app/resources/generated_resources_it.xtb b/chrome/app/resources/generated_resources_it.xtb
-index 756912039b2fe..e5acb8ed9c4f1 100644
+index 102300be9712b..7372325dfec3e 100644
 --- a/chrome/app/resources/generated_resources_it.xtb
 +++ b/chrome/app/resources/generated_resources_it.xtb
 @@ -859,7 +859,7 @@ Controlla le password in qualsiasi momento in <ph name="GOOGLE_PASSWORD_MANAGER"
@@ -118442,7 +118442,7 @@ index 5add7a8dab858..aa1f84cef03ed 100644
  <translation id="8690129572193755009">אתרים יכולים לבקש הרשאה לטפל בפרוטוקולים</translation>
  <translation id="869144235543261764">בכרטיסייה הזו מופעל סרטון במצב 'תמונה בתוך תמונה'</translation>
 diff --git a/chrome/app/resources/generated_resources_ja.xtb b/chrome/app/resources/generated_resources_ja.xtb
-index 913620d03ddaa..d9cef6e89a97a 100644
+index 1928151e45797..11bba2a3d5d2d 100644
 --- a/chrome/app/resources/generated_resources_ja.xtb
 +++ b/chrome/app/resources/generated_resources_ja.xtb
 @@ -859,7 +859,7 @@
@@ -119852,7 +119852,7 @@ index e09d52a52e58f..8750ad6588a11 100644
  <translation id="8690129572193755009">Laman boleh meminta untuk mengendalikan protokol</translation>
  <translation id="869144235543261764">Tab ini memainkan video dalam mod gambar dalam gambar</translation>
 diff --git a/chrome/app/resources/generated_resources_my.xtb b/chrome/app/resources/generated_resources_my.xtb
-index a879d43f1eb07..17832f89d79ec 100644
+index f4213c656d79c..a085a69f7fc3b 100644
 --- a/chrome/app/resources/generated_resources_my.xtb
 +++ b/chrome/app/resources/generated_resources_my.xtb
 @@ -859,7 +859,7 @@
@@ -120510,7 +120510,7 @@ index ee55e75f35a30..be10a8e05905f 100644
  <translation id="8690129572193755009">Witryny mogą prosić o zgodę na obsługę protokołów</translation>
  <translation id="869144235543261764">Na tej karcie jest odtwarzany film w trybie obrazu w obrazie</translation>
 diff --git a/chrome/app/resources/generated_resources_pt-BR.xtb b/chrome/app/resources/generated_resources_pt-BR.xtb
-index f97557cd6e60a..91ab2839bff4f 100644
+index 02b2affe39acf..357b270d41414 100644
 --- a/chrome/app/resources/generated_resources_pt-BR.xtb
 +++ b/chrome/app/resources/generated_resources_pt-BR.xtb
 @@ -860,7 +860,7 @@ Verifique suas senhas a qualquer momento no <ph name="GOOGLE_PASSWORD_MANAGER" /
@@ -121450,7 +121450,7 @@ index 3804b5453ac61..c9800a37fbe1b 100644
  <translation id="8690129572193755009">Сајтови могу да траже да управљају протоколима</translation>
  <translation id="869144235543261764">Ова картица репродукује видео у режиму слике у слици</translation>
 diff --git a/chrome/app/resources/generated_resources_sv.xtb b/chrome/app/resources/generated_resources_sv.xtb
-index 0f23f218b0ca6..834f1b2df536f 100644
+index af858fa5262b0..46295d19b94b4 100644
 --- a/chrome/app/resources/generated_resources_sv.xtb
 +++ b/chrome/app/resources/generated_resources_sv.xtb
 @@ -860,7 +860,7 @@ Du kan kontrollera dina lösenord när du vill i <ph name="GOOGLE_PASSWORD_MANAG
@@ -121544,7 +121544,7 @@ index 0f23f218b0ca6..834f1b2df536f 100644
  <translation id="8690129572193755009">Webbplatser får begära tillstånd att hantera protokoll</translation>
  <translation id="869144235543261764">På den här fliken spelas en video upp i bild-i-bild-läge</translation>
 diff --git a/chrome/app/resources/generated_resources_sw.xtb b/chrome/app/resources/generated_resources_sw.xtb
-index 2ff8eb80e2b8d..e234c7408b96b 100644
+index b76b5a492ac58..822097a0c7943 100644
 --- a/chrome/app/resources/generated_resources_sw.xtb
 +++ b/chrome/app/resources/generated_resources_sw.xtb
 @@ -860,7 +860,7 @@ Kagua manenosiri yako wakati wowote katika <ph name="GOOGLE_PASSWORD_MANAGER" />
@@ -122390,7 +122390,7 @@ index 87915d789d786..946038975b537 100644
  <translation id="8690129572193755009">Trang web có thể yêu cầu xử lý các giao thức</translation>
  <translation id="869144235543261764">Thẻ này đang phát video ở chế độ hình trong hình</translation>
 diff --git a/chrome/app/resources/generated_resources_zh-CN.xtb b/chrome/app/resources/generated_resources_zh-CN.xtb
-index caebf432b42b8..b7a9d0b00a78e 100644
+index 80be5d5b5267c..f68354c9f0bd4 100644
 --- a/chrome/app/resources/generated_resources_zh-CN.xtb
 +++ b/chrome/app/resources/generated_resources_zh-CN.xtb
 @@ -859,7 +859,7 @@
@@ -136788,7 +136788,7 @@ index 00bc4eefd4228..3b5ebb5dd4d4f 100644
  <translation id="981121421437150478">Sin conexión</translation>
  <translation id="98237783946365638">Guardar el documento de identidad de forma segura en la Billetera de Google</translation>
 diff --git a/components/strings/components_strings_es.xtb b/components/strings/components_strings_es.xtb
-index a5a603726184c..6627935d7a0d9 100644
+index b58da93e521e9..d0c3b4c3c40ac 100644
 --- a/components/strings/components_strings_es.xtb
 +++ b/components/strings/components_strings_es.xtb
 @@ -11,7 +11,7 @@
@@ -137913,7 +137913,7 @@ index bb6ea086eccae..c7fea0c39942e 100644
  <translation id="981121421437150478">Konexiorik gabekoak</translation>
  <translation id="98237783946365638">Gorde nortasun-agiria modu seguruan Google Wallet-en</translation>
 diff --git a/components/strings/components_strings_fa.xtb b/components/strings/components_strings_fa.xtb
-index 6ecc9cdebfbf7..0b20b217a944d 100644
+index d624867ed3116..9a403dca42340 100644
 --- a/components/strings/components_strings_fa.xtb
 +++ b/components/strings/components_strings_fa.xtb
 @@ -11,7 +11,7 @@
@@ -149915,7 +149915,7 @@ index 71acaa02dfa63..e5d7621b12f62 100644
  <translation id="981121421437150478">अफलाइन</translation>
  <translation id="98237783946365638">Google Wallet मा परिचयपत्रसम्बन्धी जानकारी सुरक्षित रूपमा सेभ गर्नुहोस्</translation>
 diff --git a/components/strings/components_strings_nl.xtb b/components/strings/components_strings_nl.xtb
-index 2e2f72bcb196f..3cbbf240f7338 100644
+index 9d946f41a09c3..5aa2d40e26d8d 100644
 --- a/components/strings/components_strings_nl.xtb
 +++ b/components/strings/components_strings_nl.xtb
 @@ -11,7 +11,7 @@
@@ -154792,7 +154792,7 @@ index 89bc5eafa8b14..a13406a561165 100644
  <translation id="981121421437150478">Offline</translation>
  <translation id="98237783946365638">Ruaj kartën e identitetit në mënyrë të sigurt te "Portofoli i Google"</translation>
 diff --git a/components/strings/components_strings_sr-Latn.xtb b/components/strings/components_strings_sr-Latn.xtb
-index cafeb114cc224..855967df9b079 100644
+index c1af162478c7e..8f9610dd78df6 100644
 --- a/components/strings/components_strings_sr-Latn.xtb
 +++ b/components/strings/components_strings_sr-Latn.xtb
 @@ -11,7 +11,7 @@
@@ -155167,7 +155167,7 @@ index cafeb114cc224..855967df9b079 100644
  <translation id="981121421437150478">Oflajn</translation>
  <translation id="98237783946365638">Bezbedno sačuvajte ličnu kartu u Google novčaniku</translation>
 diff --git a/components/strings/components_strings_sr.xtb b/components/strings/components_strings_sr.xtb
-index d946e95d6df83..a03bf35995ce1 100644
+index 00d20572c9904..1f038e882508a 100644
 --- a/components/strings/components_strings_sr.xtb
 +++ b/components/strings/components_strings_sr.xtb
 @@ -11,7 +11,7 @@
@@ -155917,7 +155917,7 @@ index bbc614ce40fe5..7ee3cc0968e68 100644
  <translation id="981121421437150478">Offline</translation>
  <translation id="98237783946365638">Spara id-kortet säkert i Google Wallet</translation>
 diff --git a/components/strings/components_strings_sw.xtb b/components/strings/components_strings_sw.xtb
-index 09e1a53f0e3a4..26d61dc86639d 100644
+index f2df070b1a622..6001a3a7c044e 100644
 --- a/components/strings/components_strings_sw.xtb
 +++ b/components/strings/components_strings_sw.xtb
 @@ -11,7 +11,7 @@
@@ -159296,7 +159296,7 @@ index 44b5b58487fc2..f871505aff28c 100644
  <translation id="981121421437150478">Ngoại tuyến</translation>
  <translation id="98237783946365638">Lưu thẻ căn cước một cách an toàn vào Google Wallet</translation>
 diff --git a/components/strings/components_strings_zh-CN.xtb b/components/strings/components_strings_zh-CN.xtb
-index 3b7e0631c605b..fb7f06b1c6a0c 100644
+index eb98fc2db52d9..fd659c7ae9e24 100644
 --- a/components/strings/components_strings_zh-CN.xtb
 +++ b/components/strings/components_strings_zh-CN.xtb
 @@ -11,7 +11,7 @@
